@@ -495,7 +495,9 @@ fn parse_record_fields(
 
 fn parse_list_literal(state: State) -> Result(#(ast.Expr, State), String) {
   let state = advance(state)
-  use #(elements, state) <- result.try(parse_arg_list(state))
+  use #(elements, state) <- result.try(
+    parse_comma_separated(state, parse_expr, token.TokenRBracket),
+  )
   use state <- result.try(expect(state, token.TokenRBracket))
   Ok(#(ast.ExprList(elements:), state))
 }

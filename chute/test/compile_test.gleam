@@ -170,7 +170,7 @@ pub fn compile_task_dispatch_test() {
 effect do_a() -> Result(Nil, Error)
 effect do_b() -> Result(Nil, Error)
 
-pub fn main(env: { trigger: String }) -> Result(Nil, Error) {
+pub fn main(env: { trigger: String }) -> List(fn() -> Result(Nil, Error)) {
     let intents = [
         fn() { perform do_a() },
         fn() { perform do_b() }
