@@ -1,0 +1,15 @@
+*.beam
+*.ez
+**/build
+erl_crash.dump
+
+**/node_modules/
+*.sqlite*
+*.db*
+
+knowledge/repos/
+
+STATUS.md
+
+# Lustre dev binaries
+**/.lustre/bin/
