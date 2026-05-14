@@ -2,3 +2,63 @@
 gleam = "latest"
 erlang = "latest"
 rebar = "latest"
+
+# ── Chute ────────────────────────────────────────────────────────────────
+
+[tasks."chute:check"]
+description = "Type-check the chute project"
+run = "cd chute && gleam check"
+
+[tasks."chute:format"]
+description = "Check formatting for the chute project"
+run = "cd chute && gleam format --check"
+
+[tasks."chute:build"]
+description = "Build the chute project"
+run = "cd chute && gleam build"
+
+[tasks."chute:test"]
+description = "Run chute tests"
+run = "cd chute && gleam test"
+
+# ── Ballast ──────────────────────────────────────────────────────────────
+
+[tasks."ballast:check"]
+description = "Type-check the ballast project"
+run = "cd ballast && gleam check"
+
+[tasks."ballast:format"]
+description = "Check formatting for the ballast project"
+run = "cd ballast && gleam format --check"
+
+[tasks."ballast:build"]
+description = "Build the ballast project"
+run = "cd ballast && gleam build"
+
+[tasks."ballast:test"]
+description = "Run ballast tests"
+run = "cd ballast && gleam test"
+
+# ── Top-level aliases ────────────────────────────────────────────────────
+
+[tasks.check]
+description = "Type-check all projects"
+depends = ["chute:check", "ballast:check"]
+
+[tasks.format]
+description = "Check formatting for all projects"
+depends = ["chute:format", "ballast:format"]
+
+[tasks.build]
+description = "Build all projects"
+depends = ["chute:build", "ballast:build"]
+
+[tasks.test]
+description = "Run all tests"
+depends = ["chute:test", "ballast:test"]
+
+# ── CI gate ──────────────────────────────────────────────────────────────
+
+[tasks.pre-commit]
+description = "Run all checks before committing"
+depends = ["check", "format", "build", "test"]
