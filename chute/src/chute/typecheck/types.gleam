@@ -109,8 +109,7 @@ pub fn resolve(tc_type: TcType, subst: dict.Dict(Int, TcType)) -> TcType {
       )
     TcFn(params, ret) ->
       TcFn(list.map(params, fn(p) { resolve(p, subst) }), resolve(ret, subst))
-    TcUnion(types) ->
-      TcUnion(list.map(types, fn(t) { resolve(t, subst) }))
+    TcUnion(types) -> TcUnion(list.map(types, fn(t) { resolve(t, subst) }))
     TcError -> TcError
   }
 }
@@ -123,15 +122,13 @@ fn occurs_check(
   let resolved = resolve(tc_type, subst)
   case resolved {
     TcVar(id) -> id == var_id
-    TcNamed(_, args) ->
-      list.any(args, fn(a) { occurs_check(var_id, a, subst) })
+    TcNamed(_, args) -> list.any(args, fn(a) { occurs_check(var_id, a, subst) })
     TcRecord(fields) ->
       list.any(fields, fn(f) { occurs_check(var_id, f.type_, subst) })
     TcFn(params, ret) ->
       list.any(params, fn(p) { occurs_check(var_id, p, subst) })
       || occurs_check(var_id, ret, subst)
-    TcUnion(types) ->
-      list.any(types, fn(t) { occurs_check(var_id, t, subst) })
+    TcUnion(types) -> list.any(types, fn(t) { occurs_check(var_id, t, subst) })
     TcError -> False
   }
 }
@@ -150,7 +147,11 @@ pub fn unify(t1: TcType, t2: TcType, state: TypeCheckState) -> TypeCheckState {
   }
 }
 
-fn unify_inner(t1: TcType, t2: TcType, state: TypeCheckState) -> TypeCheckState {
+fn unify_inner(
+  t1: TcType,
+  t2: TcType,
+  state: TypeCheckState,
+) -> TypeCheckState {
   case t1, t2 {
     // Error sentinel: compatible with anything to prevent cascading
     TcError, _ -> state
@@ -162,7 +163,10 @@ fn unify_inner(t1: TcType, t2: TcType, state: TypeCheckState) -> TypeCheckState 
         True ->
           add_error(
             state,
-            "Infinite type: " <> tc_type_to_string(t1) <> " ~ " <> tc_type_to_string(t2),
+            "Infinite type: "
+              <> tc_type_to_string(t1)
+              <> " ~ "
+              <> tc_type_to_string(t2),
           )
         False ->
           TypeCheckState(..state, subst: dict.insert(state.subst, id, other))
@@ -175,7 +179,10 @@ fn unify_inner(t1: TcType, t2: TcType, state: TypeCheckState) -> TypeCheckState 
         False ->
           add_error(
             state,
-            "Type mismatch: " <> tc_type_to_string(t1) <> " ≠ " <> tc_type_to_string(t2),
+            "Type mismatch: "
+              <> tc_type_to_string(t1)
+              <> " ≠ "
+              <> tc_type_to_string(t2),
           )
         True -> unify_lists(a1, a2, state)
       }
@@ -191,9 +198,9 @@ fn unify_inner(t1: TcType, t2: TcType, state: TypeCheckState) -> TypeCheckState 
           add_error(
             state,
             "Function arity mismatch: "
-            <> tc_type_to_string(t1)
-            <> " ≠ "
-            <> tc_type_to_string(t2),
+              <> tc_type_to_string(t1)
+              <> " ≠ "
+              <> tc_type_to_string(t2),
           )
         True -> {
           let state = unify_lists(p1, p2, state)
@@ -214,7 +221,10 @@ fn unify_inner(t1: TcType, t2: TcType, state: TypeCheckState) -> TypeCheckState 
     _, _ ->
       add_error(
         state,
-        "Type mismatch: " <> tc_type_to_string(t1) <> " ≠ " <> tc_type_to_string(t2),
+        "Type mismatch: "
+          <> tc_type_to_string(t1)
+          <> " ≠ "
+          <> tc_type_to_string(t2),
       )
   }
 }
@@ -244,9 +254,9 @@ fn unify_records(
       add_error(
         state,
         "Record field count mismatch: "
-        <> int.to_string(list.length(f1))
-        <> " vs "
-        <> int.to_string(list.length(f2)),
+          <> int.to_string(list.length(f1))
+          <> " vs "
+          <> int.to_string(list.length(f2)),
       )
     True -> {
       let s1 = list.sort(f1, fn(a, b) { string.compare(a.name, b.name) })
@@ -297,8 +307,7 @@ fn unify_union_with(
 
 pub fn ast_type_to_tc(t: ast.Type) -> TcType {
   case t {
-    ast.TypeNamed(name, args) ->
-      TcNamed(name, list.map(args, ast_type_to_tc))
+    ast.TypeNamed(name, args) -> TcNamed(name, list.map(args, ast_type_to_tc))
     ast.TypeRecord(fields) ->
       TcRecord(
         list.map(fields, fn(f) { TcTypeField(f.name, ast_type_to_tc(f.type_)) }),
@@ -317,10 +326,7 @@ pub fn tc_type_to_string(t: TcType) -> String {
     TcVar(id) -> "?" <> int.to_string(id)
     TcNamed(name, []) -> name
     TcNamed(name, args) ->
-      name
-      <> "("
-      <> string.join(list.map(args, tc_type_to_string), ", ")
-      <> ")"
+      name <> "(" <> string.join(list.map(args, tc_type_to_string), ", ") <> ")"
     TcRecord(fields) ->
       "{ "
       <> string.join(
@@ -333,8 +339,7 @@ pub fn tc_type_to_string(t: TcType) -> String {
       <> string.join(list.map(params, tc_type_to_string), ", ")
       <> ") -> "
       <> tc_type_to_string(ret)
-    TcUnion(types) ->
-      string.join(list.map(types, tc_type_to_string), " | ")
+    TcUnion(types) -> string.join(list.map(types, tc_type_to_string), " | ")
     TcError -> "<error>"
   }
 }
@@ -355,10 +360,10 @@ pub fn check_arity(
       add_error(
         state,
         context
-        <> " expects "
-        <> int.to_string(expected)
-        <> " argument(s), got "
-        <> int.to_string(actual),
+          <> " expects "
+          <> int.to_string(expected)
+          <> " argument(s), got "
+          <> int.to_string(actual),
       )
   }
 }

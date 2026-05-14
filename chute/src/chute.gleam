@@ -47,14 +47,12 @@ pub fn compile(source: String) -> Result(String, String) {
   case errors {
     [] -> Ok(to_sexp(desugared))
     _ ->
-      Error(
-        string.join(
-          list.map(errors, fn(e) {
-            let tc.TypeError(message: msg) = e
-            msg
-          }),
-          "\n",
-        ),
-      )
+      Error(string.join(
+        list.map(errors, fn(e) {
+          let tc.TypeError(message: msg) = e
+          msg
+        }),
+        "\n",
+      ))
   }
 }

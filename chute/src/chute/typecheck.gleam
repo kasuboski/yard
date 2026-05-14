@@ -46,8 +46,11 @@ fn collect_signatures(
           let ret = tc.ast_type_to_tc(return_type)
           tc.TypeCheckState(
             ..state,
-            effects:
-              dict.insert(state.effects, name, tc.EffectSig(param_types, ret)),
+            effects: dict.insert(
+              state.effects,
+              name,
+              tc.EffectSig(param_types, ret),
+            ),
           )
         }
         ast.FunctionDecl(name, _public, params, return_type, _body) -> {
@@ -56,8 +59,11 @@ fn collect_signatures(
           let ret = tc.ast_type_to_tc(return_type)
           tc.TypeCheckState(
             ..state,
-            functions:
-              dict.insert(state.functions, name, tc.FnSig(param_types, ret)),
+            functions: dict.insert(
+              state.functions,
+              name,
+              tc.FnSig(param_types, ret),
+            ),
           )
         }
       }
@@ -105,10 +111,11 @@ fn add_params_to_env(
   case params {
     [] -> state
     [ast.Param(name, type_), ..rest] -> {
-      let state = tc.TypeCheckState(
-        ..state,
-        env: dict.insert(state.env, name, tc.ast_type_to_tc(type_)),
-      )
+      let state =
+        tc.TypeCheckState(
+          ..state,
+          env: dict.insert(state.env, name, tc.ast_type_to_tc(type_)),
+        )
       add_params_to_env(rest, state)
     }
   }
@@ -162,10 +169,7 @@ fn infer_statement(
         option.Some(_) -> state
         option.None -> state
       }
-      tc.TypeCheckState(
-        ..state,
-        env: dict.insert(state.env, name, final_type),
-      )
+      tc.TypeCheckState(..state, env: dict.insert(state.env, name, final_type))
     }
     ast.StatementExpr(expr) -> {
       let #(_, state) = infer_expr(expr, state)
@@ -200,11 +204,10 @@ fn infer_expr(
               #(tc.TcNamed("Option", [t]), state)
             }
             "Nil" -> #(tc.TcNamed("Nil", []), state)
-            _ ->
-              #(
-                tc.TcError,
-                tc.add_error(state, "Undefined variable: " <> name),
-              )
+            _ -> #(
+              tc.TcError,
+              tc.add_error(state, "Undefined variable: " <> name),
+            )
           }
         }
       }
@@ -236,10 +239,10 @@ fn infer_expr(
             tc.add_error(
               state,
               "Cannot use "
-              <> module_name
-              <> "."
-              <> field
-              <> " as a value — call it directly",
+                <> module_name
+                <> "."
+                <> field
+                <> " as a value — call it directly",
             ),
           )
         }
@@ -317,33 +320,30 @@ fn infer_field_access(
   case resolved {
     tc.TcRecord(fields) -> {
       case find_field_type(fields, field) {
-        Ok(field_type) ->
-          #(tc.resolve(field_type, state.subst), state)
-        Error(_) ->
-          #(
-            tc.TcError,
-            tc.add_error(
-              state,
-              "Record type "
+        Ok(field_type) -> #(tc.resolve(field_type, state.subst), state)
+        Error(_) -> #(
+          tc.TcError,
+          tc.add_error(
+            state,
+            "Record type "
               <> tc.tc_type_to_string(resolved)
               <> " has no field '"
               <> field
               <> "'",
-            ),
-          )
+          ),
+        )
       }
     }
-    _ ->
-      #(
-        tc.TcError,
-        tc.add_error(
-          state,
-          "Cannot access field '"
+    _ -> #(
+      tc.TcError,
+      tc.add_error(
+        state,
+        "Cannot access field '"
           <> field
           <> "' on non-record type: "
           <> tc.tc_type_to_string(resolved),
-        ),
-      )
+      ),
+    )
   }
 }
 
@@ -423,8 +423,7 @@ fn infer_error_constructor(
       let #(success_type, state) = tc.fresh_var(state)
       #(tc.TcNamed("Result", [success_type, error_type]), state)
     }
-    _ ->
-      #(tc.TcError, tc.add_error(state, "Error() takes exactly 1 argument"))
+    _ -> #(tc.TcError, tc.add_error(state, "Error() takes exactly 1 argument"))
   }
 }
 
@@ -451,8 +450,7 @@ fn infer_regular_call(
   case func {
     ast.ExprVar(name) -> {
       case dict.get(state.env, name) {
-        Ok(fn_type) ->
-          infer_call_with_type(fn_type, args, name, state)
+        Ok(fn_type) -> infer_call_with_type(fn_type, args, name, state)
         Error(_) -> {
           case dict.get(state.functions, name) {
             Ok(tc.FnSig(param_types, return_type)) -> {
@@ -464,15 +462,13 @@ fn infer_regular_call(
                   state,
                 )
               let #(state, arg_types) = infer_args(args, state)
-              let state =
-                tc.unify_arg_types(param_types, arg_types, state)
+              let state = tc.unify_arg_types(param_types, arg_types, state)
               #(tc.resolve(return_type, state.subst), state)
             }
-            Error(_) ->
-              #(
-                tc.TcError,
-                tc.add_error(state, "Undefined function: " <> name),
-              )
+            Error(_) -> #(
+              tc.TcError,
+              tc.add_error(state, "Undefined function: " <> name),
+            )
           }
         }
       }
@@ -514,8 +510,7 @@ fn infer_call_with_type(
         tc.TcError,
         tc.add_error(
           state,
-          "Cannot call non-function type: "
-          <> tc.tc_type_to_string(resolved),
+          "Cannot call non-function type: " <> tc.tc_type_to_string(resolved),
         ),
       )
     }
@@ -565,11 +560,7 @@ fn infer_perform(
       let state = tc.unify_arg_types(param_types, arg_types, state)
       #(tc.resolve(return_type, state.subst), state)
     }
-    Error(_) ->
-      #(
-        tc.TcError,
-        tc.add_error(state, "Undefined effect: " <> name),
-      )
+    Error(_) -> #(tc.TcError, tc.add_error(state, "Undefined effect: " <> name))
   }
 }
 
@@ -594,11 +585,7 @@ fn infer_record_fields(
     [] -> #(state, list.reverse(acc))
     [ast.RecordField(name, value), ..rest] -> {
       let #(value_type, state) = infer_expr(value, state)
-      infer_record_fields(
-        rest,
-        state,
-        [tc.TcTypeField(name, value_type), ..acc],
-      )
+      infer_record_fields(rest, state, [tc.TcTypeField(name, value_type), ..acc])
     }
   }
 }
@@ -668,8 +655,7 @@ fn extend_env(
   case names, types {
     [], [] -> state
     [n, ..ns], [t, ..ts] -> {
-      let state =
-        tc.TypeCheckState(..state, env: dict.insert(state.env, n, t))
+      let state = tc.TypeCheckState(..state, env: dict.insert(state.env, n, t))
       extend_env(ns, ts, state)
     }
     _, _ -> state

@@ -105,19 +105,13 @@ fn infer_list_map(
     [list_expr, fn_expr] -> {
       let #(elem_type, state) = tc.fresh_var(state)
       let #(actual_list, state) = infer(list_expr, state)
-      let state =
-        tc.unify(actual_list, tc.TcNamed("List", [elem_type]), state)
+      let state = tc.unify(actual_list, tc.TcNamed("List", [elem_type]), state)
       let #(fn_type, state) = infer(fn_expr, state)
       let #(result_type, state) = tc.fresh_var(state)
-      let state =
-        tc.unify(fn_type, tc.TcFn([elem_type], result_type), state)
-      #(
-        tc.TcNamed("List", [tc.resolve(result_type, state.subst)]),
-        state,
-      )
+      let state = tc.unify(fn_type, tc.TcFn([elem_type], result_type), state)
+      #(tc.TcNamed("List", [tc.resolve(result_type, state.subst)]), state)
     }
-    _ ->
-      #(tc.TcError, tc.add_error(state, "list.map() expects 2 arguments"))
+    _ -> #(tc.TcError, tc.add_error(state, "list.map() expects 2 arguments"))
   }
 }
 
@@ -131,18 +125,13 @@ fn infer_list_filter(
     [list_expr, fn_expr] -> {
       let #(elem_type, state) = tc.fresh_var(state)
       let #(actual_list, state) = infer(list_expr, state)
-      let state =
-        tc.unify(actual_list, tc.TcNamed("List", [elem_type]), state)
+      let state = tc.unify(actual_list, tc.TcNamed("List", [elem_type]), state)
       let #(fn_type, state) = infer(fn_expr, state)
       let state =
         tc.unify(fn_type, tc.TcFn([elem_type], tc.TcNamed("Bool", [])), state)
-      #(
-        tc.TcNamed("List", [tc.resolve(elem_type, state.subst)]),
-        state,
-      )
+      #(tc.TcNamed("List", [tc.resolve(elem_type, state.subst)]), state)
     }
-    _ ->
-      #(tc.TcError, tc.add_error(state, "list.filter() expects 2 arguments"))
+    _ -> #(tc.TcError, tc.add_error(state, "list.filter() expects 2 arguments"))
   }
 }
 
@@ -156,16 +145,14 @@ fn infer_list_fold(
     [list_expr, init_expr, fn_expr] -> {
       let #(elem_type, state) = tc.fresh_var(state)
       let #(actual_list, state) = infer(list_expr, state)
-      let state =
-        tc.unify(actual_list, tc.TcNamed("List", [elem_type]), state)
+      let state = tc.unify(actual_list, tc.TcNamed("List", [elem_type]), state)
       let #(acc_type, state) = infer(init_expr, state)
       let #(fn_type, state) = infer(fn_expr, state)
       let state =
         tc.unify(fn_type, tc.TcFn([acc_type, elem_type], acc_type), state)
       #(tc.resolve(acc_type, state.subst), state)
     }
-    _ ->
-      #(tc.TcError, tc.add_error(state, "list.fold() expects 3 arguments"))
+    _ -> #(tc.TcError, tc.add_error(state, "list.fold() expects 3 arguments"))
   }
 }
 
@@ -179,12 +166,10 @@ fn infer_list_length(
     [list_expr] -> {
       let #(elem_type, state) = tc.fresh_var(state)
       let #(actual_list, state) = infer(list_expr, state)
-      let state =
-        tc.unify(actual_list, tc.TcNamed("List", [elem_type]), state)
+      let state = tc.unify(actual_list, tc.TcNamed("List", [elem_type]), state)
       #(tc.TcNamed("Int", []), state)
     }
-    _ ->
-      #(tc.TcError, tc.add_error(state, "list.length() expects 1 argument"))
+    _ -> #(tc.TcError, tc.add_error(state, "list.length() expects 1 argument"))
   }
 }
 
@@ -221,10 +206,11 @@ fn infer_result_try(
         )
 
       // Auto-union: combine error types
-      let combined_error = tc.TcUnion([
-        tc.resolve(error_e1, state.subst),
-        tc.resolve(error_e2, state.subst),
-      ])
+      let combined_error =
+        tc.TcUnion([
+          tc.resolve(error_e1, state.subst),
+          tc.resolve(error_e2, state.subst),
+        ])
       #(
         tc.TcNamed("Result", [
           tc.resolve(success_b, state.subst),
@@ -233,8 +219,7 @@ fn infer_result_try(
         state,
       )
     }
-    _ ->
-      #(tc.TcError, tc.add_error(state, "result.try() expects 2 arguments"))
+    _ -> #(tc.TcError, tc.add_error(state, "result.try() expects 2 arguments"))
   }
 }
 
@@ -268,8 +253,7 @@ fn infer_result_map(
         state,
       )
     }
-    _ ->
-      #(tc.TcError, tc.add_error(state, "result.map() expects 2 arguments"))
+    _ -> #(tc.TcError, tc.add_error(state, "result.map() expects 2 arguments"))
   }
 }
 
@@ -287,8 +271,7 @@ fn infer_result_is_ok(
       let state = tc.unify(actual, tc.TcNamed("Result", [a, e]), state)
       #(tc.TcNamed("Bool", []), state)
     }
-    _ ->
-      #(tc.TcError, tc.add_error(state, "result.is_ok() expects 1 argument"))
+    _ -> #(tc.TcError, tc.add_error(state, "result.is_ok() expects 1 argument"))
   }
 }
 
@@ -306,11 +289,10 @@ fn infer_result_is_error(
       let state = tc.unify(actual, tc.TcNamed("Result", [a, e]), state)
       #(tc.TcNamed("Bool", []), state)
     }
-    _ ->
-      #(
-        tc.TcError,
-        tc.add_error(state, "result.is_error() expects 1 argument"),
-      )
+    _ -> #(
+      tc.TcError,
+      tc.add_error(state, "result.is_error() expects 1 argument"),
+    )
   }
 }
 
@@ -334,8 +316,7 @@ fn infer_option_map(
       let state = tc.unify(fn_type, tc.TcFn([a], b), state)
       #(tc.TcNamed("Option", [tc.resolve(b, state.subst)]), state)
     }
-    _ ->
-      #(tc.TcError, tc.add_error(state, "option.map() expects 2 arguments"))
+    _ -> #(tc.TcError, tc.add_error(state, "option.map() expects 2 arguments"))
   }
 }
 
@@ -351,8 +332,10 @@ fn infer_string_length(
       let state = tc.unify(actual, tc.TcNamed("String", []), state)
       #(tc.TcNamed("Int", []), state)
     }
-    _ ->
-      #(tc.TcError, tc.add_error(state, "string.length() expects 1 argument"))
+    _ -> #(
+      tc.TcError,
+      tc.add_error(state, "string.length() expects 1 argument"),
+    )
   }
 }
 
@@ -370,8 +353,10 @@ fn infer_string_concat(
       let state = tc.unify(actual_b, tc.TcNamed("String", []), state)
       #(tc.TcNamed("String", []), state)
     }
-    _ ->
-      #(tc.TcError, tc.add_error(state, "string.concat() expects 2 arguments"))
+    _ -> #(
+      tc.TcError,
+      tc.add_error(state, "string.concat() expects 2 arguments"),
+    )
   }
 }
 
@@ -391,18 +376,20 @@ fn infer_task_dispatch_all(
       // The thunks arg must be a List of zero-arg closures
       let #(thunk_return, state) = tc.fresh_var(state)
       let #(thunk_error, state) = tc.fresh_var(state)
-      let thunk_type = tc.TcFn([], tc.TcNamed("Result", [thunk_return, thunk_error]))
+      let thunk_type =
+        tc.TcFn([], tc.TcNamed("Result", [thunk_return, thunk_error]))
       let #(actual, state) = infer(thunks_expr, state)
-      let state =
-        tc.unify(actual, tc.TcNamed("List", [thunk_type]), state)
+      let state = tc.unify(actual, tc.TcNamed("List", [thunk_type]), state)
       // dispatch_all returns Result(Nil, Error) per spec
-      #(tc.TcNamed("Result", [tc.TcNamed("Nil", []), tc.TcNamed("Error", [])]), state)
-    }
-    _ ->
       #(
-        tc.TcError,
-        tc.add_error(state, "task.dispatch_all() expects 1 argument"),
+        tc.TcNamed("Result", [tc.TcNamed("Nil", []), tc.TcNamed("Error", [])]),
+        state,
       )
+    }
+    _ -> #(
+      tc.TcError,
+      tc.add_error(state, "task.dispatch_all() expects 1 argument"),
+    )
   }
 }
 
