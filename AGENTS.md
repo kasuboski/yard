@@ -1,7 +1,7 @@
 Mono repo for Ballast and Chute.
 
 Chute is a language tailored for LLM generation. Read knowledge/chute.md to learn more.
-Ballast is the runtime for Chute. It takes in the Chute code provides the capabilities for the effects defined in Chute and executes the code.
+Ballast is the runtime for Chute. It takes in the Chute code provides the capabilities for the effects defined in Chute and executes the code. Read knowledge/ballast.md to learn more.
 
 Both projects use gleam with the erlang target. mise and mise.toml provide the environment setup.
 
