@@ -246,13 +246,28 @@ fn parse_block_body_inner(
 
 fn parse_let_decl(state: State) -> Result(#(ast.Statement, State), String) {
   let state = advance(state)
-  use #(name, state) <- result.try(expect_ident(state))
-  use #(type_annotation, state) <- result.try(parse_optional_type_annotation(
-    state,
-  ))
-  use state <- result.try(expect(state, token.TokenAssign))
-  use #(value, state) <- result.try(parse_expr(state))
-  Ok(#(ast.LetDecl(name, type_annotation, value), state))
+  // Check for `let try`
+  case current(state) {
+    token.TokenTry -> {
+      let state = advance(state)
+      use #(name, state) <- result.try(expect_ident(state))
+      use #(type_annotation, state) <- result.try(
+        parse_optional_type_annotation(state),
+      )
+      use state <- result.try(expect(state, token.TokenAssign))
+      use #(value, state) <- result.try(parse_expr(state))
+      Ok(#(ast.LetTryDecl(name, type_annotation, value), state))
+    }
+    _ -> {
+      use #(name, state) <- result.try(expect_ident(state))
+      use #(type_annotation, state) <- result.try(
+        parse_optional_type_annotation(state),
+      )
+      use state <- result.try(expect(state, token.TokenAssign))
+      use #(value, state) <- result.try(parse_expr(state))
+      Ok(#(ast.LetDecl(name, type_annotation, value), state))
+    }
+  }
 }
 
 fn parse_optional_type_annotation(
@@ -271,7 +286,10 @@ fn parse_optional_type_annotation(
 // ── Expressions (by precedence) ───────────────────────────────────────────
 
 fn parse_expr(state: State) -> Result(#(ast.Expr, State), String) {
-  parse_pipeline(state)
+  case current(state) {
+    token.TokenCase -> parse_case_expr(state)
+    _ -> parse_pipeline(state)
+  }
 }
 
 fn parse_pipeline(state: State) -> Result(#(ast.Expr, State), String) {
@@ -382,6 +400,64 @@ fn parse_factor(state: State) -> Result(#(ast.Expr, State), String) {
   }
 }
 
+// ── Case Expression ────────────────────────────────────────────────────────
+
+fn parse_case_expr(state: State) -> Result(#(ast.Expr, State), String) {
+  // current is TokenCase
+  let state = advance(state)
+  use #(subject, state) <- result.try(parse_pipeline(state))
+  use state <- result.try(expect(state, token.TokenLBrace))
+  use #(branches, state) <- result.try(parse_case_branches(state, []))
+  use state <- result.try(expect(state, token.TokenRBrace))
+  Ok(#(ast.ExprCase(subject:, branches:), state))
+}
+
+fn parse_case_branches(
+  state: State,
+  acc: List(ast.CaseBranch),
+) -> Result(#(List(ast.CaseBranch), State), String) {
+  // Skip comments
+  case current(state) {
+    token.TokenComment(_) -> parse_case_branches(advance(state), acc)
+    token.TokenRBrace -> Ok(#(list.reverse(acc), state))
+    _ -> {
+      use #(branch, state) <- result.try(parse_one_case_branch(state))
+      parse_case_branches(state, [branch, ..acc])
+    }
+  }
+}
+
+fn parse_one_case_branch(
+  state: State,
+) -> Result(#(ast.CaseBranch, State), String) {
+  case current(state) {
+    token.TokenUnderscore -> {
+      let state = advance(state)
+      use state <- result.try(expect(state, token.TokenArrow))
+      use #(body, state) <- result.try(parse_case_branch_body(state))
+      Ok(#(ast.CaseWildcard(body:), state))
+    }
+    _ -> {
+      use #(pattern, state) <- result.try(parse_pipeline(state))
+      use state <- result.try(expect(state, token.TokenArrow))
+      use #(body, state) <- result.try(parse_case_branch_body(state))
+      Ok(#(ast.CaseBranch(pattern:, body:), state))
+    }
+  }
+}
+
+fn parse_case_branch_body(state: State) -> Result(#(ast.Block, State), String) {
+  case current(state) {
+    // If the body starts with `{`, parse as a block (child scope)
+    token.TokenLBrace -> parse_block(state)
+    // Otherwise parse as a single expression, wrap in Block
+    _ -> {
+      use #(expr, state) <- result.try(parse_pipeline(state))
+      Ok(#(ast.Block(statements: [], trailing: option.Some(expr)), state))
+    }
+  }
+}
+
 fn parse_perform(state: State) -> Result(#(ast.Expr, State), String) {
   let state = advance(state)
   use #(name, state) <- result.try(expect_ident(state))
@@ -414,7 +490,7 @@ fn parse_postfix_tail(
     }
     token.TokenDot -> {
       let state = advance(state)
-      use #(name, state) <- result.try(expect_ident(state))
+      use #(name, state) <- result.try(expect_field_name(state))
       parse_postfix_tail(ast.ExprFieldAccess(record: expr, field: name), state)
     }
     _ -> Ok(#(expr, state))
@@ -460,6 +536,7 @@ fn parse_id_list(state: State) -> Result(#(List(String), State), String) {
     fn(s) {
       case current(s) {
         token.TokenIdent(name) -> Ok(#(name, advance(s)))
+        token.TokenUnderscore -> Ok(#("_", advance(s)))
         t -> Error("Expected identifier but found: " <> token_to_string(t))
       }
     },
@@ -551,7 +628,19 @@ fn parse_comma_tail(
 fn expect_ident(state: State) -> Result(#(String, State), String) {
   case current(state) {
     token.TokenIdent(name) -> Ok(#(name, advance(state)))
+    token.TokenUnderscore -> Ok(#("_", advance(state)))
     t -> Error("Expected identifier but found: " <> token_to_string(t))
+  }
+}
+
+fn expect_field_name(state: State) -> Result(#(String, State), String) {
+  case current(state) {
+    token.TokenIdent(name) -> Ok(#(name, advance(state)))
+    token.TokenUnderscore -> Ok(#("_", advance(state)))
+    // Keywords that are valid as field names (e.g. result.try, list.filter)
+    token.TokenTry -> Ok(#("try", advance(state)))
+    token.TokenCase -> Ok(#("case", advance(state)))
+    t -> Error("Expected field name but found: " <> token_to_string(t))
   }
 }
 
@@ -578,6 +667,9 @@ fn token_to_string(tok: token.Token) -> String {
     token.TokenLet -> "let"
     token.TokenEffect -> "effect"
     token.TokenPerform -> "perform"
+    token.TokenCase -> "case"
+    token.TokenTry -> "try"
+    token.TokenUnderscore -> "_"
     token.TokenTrue -> "True"
     token.TokenFalse -> "False"
     token.TokenInt(value) -> "Int(" <> int.to_string(value) <> ")"

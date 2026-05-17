@@ -128,6 +128,17 @@ fn eval_stmts(
         eval_stmts(rest, trailing, env.insert(e, name, v), ctx, g, k)
       })
     }
+    [ast.LetTryDecl(name, _, value_expr), ..rest] -> {
+      eval_k(value_expr, e, ctx, gas, fn(v, g) {
+        case v {
+          value.OkVal(inner) ->
+            eval_stmts(rest, trailing, env.insert(e, name, inner), ctx, g, k)
+          value.ErrorVal(_) as err -> k(err, g)
+          _ ->
+            effect.EvalError(value.TypeMismatch("Result", value.type_name(v)))
+        }
+      })
+    }
     [ast.StatementExpr(expr), ..rest] -> {
       eval_k(expr, e, ctx, gas, fn(_, g) {
         eval_stmts(rest, trailing, e, ctx, g, k)
@@ -221,6 +232,10 @@ fn eval_k(
         ast.ExprClosure(params, body) -> {
           k(value.ClosureVal(params, body, e), gas)
         }
+
+        // ── Case expression ──────────────────────────────────────────────
+        ast.ExprCase(subject, branches) ->
+          eval_case_k(subject, branches, e, ctx, gas, k)
 
         // ── Group (should be desugared, evaluate inner) ──────────────
         ast.ExprGroup(inner) -> eval_k(inner, e, ctx, gas, k)
@@ -322,6 +337,48 @@ fn eval_args_loop(
       eval_k(arg, e, ctx, gas, fn(v, g) {
         eval_args_loop(rest, e, ctx, g, [v, ..acc], k)
       })
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Case expression evaluation (CPS)
+// ═══════════════════════════════════════════════════════════════════════════
+
+fn eval_case_k(
+  subject: ast.Expr,
+  branches: List(ast.CaseBranch),
+  e: env.Env,
+  ctx: EvalContext,
+  gas: Int,
+  k: fn(value.Value, Int) -> effect.EvalResult,
+) -> effect.EvalResult {
+  eval_k(subject, e, ctx, gas, fn(subject_val, g) {
+    eval_case_branches(subject_val, branches, e, ctx, g, k)
+  })
+}
+
+fn eval_case_branches(
+  subject_val: value.Value,
+  branches: List(ast.CaseBranch),
+  e: env.Env,
+  ctx: EvalContext,
+  gas: Int,
+  k: fn(value.Value, Int) -> effect.EvalResult,
+) -> effect.EvalResult {
+  case branches {
+    [] -> effect.EvalError(value.MatchError(value.value_to_string(subject_val)))
+    [ast.CaseBranch(pattern, body), ..rest] -> {
+      eval_k(pattern, e, ctx, gas, fn(pattern_val, g) {
+        case value.values_equal(subject_val, pattern_val) {
+          True -> eval_block(body, e, ctx, g, k)
+          False -> eval_case_branches(subject_val, rest, e, ctx, g, k)
+        }
+      })
+    }
+    [ast.CaseWildcard(body), ..] -> {
+      // Wildcard always matches — since we get here, no prior branch matched.
+      eval_block(body, e, ctx, gas, k)
     }
   }
 }

@@ -55,6 +55,10 @@ pub type Statement {
   /// let x: Int = expr
   LetDecl(name: String, type_annotation: option.Option(Type), value: Expr)
 
+  /// let try x = expr — unwrap Result, short-circuit on Error
+  /// let try x: Int = expr
+  LetTryDecl(name: String, type_annotation: option.Option(Type), value: Expr)
+
   /// A bare expression used as a statement (e.g., `perform send_receipt(...)`)
   StatementExpr(expr: Expr)
 }
@@ -64,6 +68,9 @@ pub type Statement {
 /// The core expression type. Ordered by precedence (lowest to highest)
 /// as described in the grammar.
 pub type Expr {
+  /// Case expression: `case subject { pattern -> body, ... }`
+  ExprCase(subject: Expr, branches: List(CaseBranch))
+
   /// Pipeline: `a |> b |> c`
   ExprPipeline(left: Expr, right: Expr)
 
@@ -133,4 +140,14 @@ pub type StringPart {
 /// A field in a record literal: `name: expr`
 pub type RecordField {
   RecordField(name: String, value: Expr)
+}
+
+// ── Case Branches ──────────────────────────────────────────────────────────
+
+/// A branch in a case expression.
+pub type CaseBranch {
+  /// A pattern match branch: `pattern_expr -> body`
+  CaseBranch(pattern: Expr, body: Block)
+  /// A wildcard catch-all branch: `_ -> body`
+  CaseWildcard(body: Block)
 }

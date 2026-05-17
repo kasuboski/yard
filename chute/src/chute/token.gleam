@@ -6,6 +6,9 @@ pub type Token {
   TokenLet
   TokenEffect
   TokenPerform
+  TokenCase
+  TokenTry
+  TokenUnderscore
   TokenTrue
   TokenFalse
 

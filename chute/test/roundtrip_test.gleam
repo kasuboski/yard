@@ -85,6 +85,11 @@ fn stmt_equal(a: ast.Statement, b: ast.Statement) -> Bool {
       a_name == b_name
       && opt_equal(a_type, b_type, type_equal)
       && expr_equal(a_val, b_val)
+    ast.LetTryDecl(a_name, a_type, a_val), ast.LetTryDecl(b_name, b_type, b_val)
+    ->
+      a_name == b_name
+      && opt_equal(a_type, b_type, type_equal)
+      && expr_equal(a_val, b_val)
     ast.StatementExpr(a_e), ast.StatementExpr(b_e) -> expr_equal(a_e, b_e)
     _, _ -> False
   }
@@ -114,6 +119,8 @@ fn expr_equal(a: ast.Expr, b: ast.Expr) -> Bool {
       a_p == b_p && block_equal(a_b, b_b)
     ast.ExprPipeline(a_l, a_r), ast.ExprPipeline(b_l, b_r) ->
       expr_equal(a_l, b_l) && expr_equal(a_r, b_r)
+    ast.ExprCase(a_s, a_br), ast.ExprCase(b_s, b_br) ->
+      expr_equal(a_s, b_s) && list_equal(a_br, b_br, case_branch_equal)
     _, _ -> False
   }
 }
@@ -147,6 +154,15 @@ fn record_field_equal(a: ast.RecordField, b: ast.RecordField) -> Bool {
   let ast.RecordField(a_n, a_v) = a
   let ast.RecordField(b_n, b_v) = b
   a_n == b_n && expr_equal(a_v, b_v)
+}
+
+fn case_branch_equal(a: ast.CaseBranch, b: ast.CaseBranch) -> Bool {
+  case a, b {
+    ast.CaseBranch(a_p, a_b), ast.CaseBranch(b_p, b_b) ->
+      expr_equal(a_p, b_p) && block_equal(a_b, b_b)
+    ast.CaseWildcard(a_b), ast.CaseWildcard(b_b) -> block_equal(a_b, b_b)
+    _, _ -> False
+  }
 }
 
 fn opt_equal(
@@ -397,8 +413,81 @@ pub fn main(env: { a: Int, b: Int }) -> Bool {
   let assert True = program_equal(desugared, result)
 }
 
+pub fn roundtrip_case_simple_test() {
+  let source =
+    "
+pub fn main(env: { x: Int }) -> Int {
+    case env.x { 1 -> 42  _ -> 0 }
+}
+"
+  let assert Ok(original) = chute.parse(source)
+  let desugared = chute.desugar(original)
+  let result = roundtrip(source)
+  let assert True = program_equal(desugared, result)
+}
+
+pub fn roundtrip_case_with_block_test() {
+  let source =
+    "
+pub fn main(env: { x: Int }) -> Int {
+    case env.x {
+        1 -> {
+            let y = env.x + 10
+            y
+        }
+        _ -> env.x
+    }
+}
+"
+  let assert Ok(original) = chute.parse(source)
+  let desugared = chute.desugar(original)
+  let result = roundtrip(source)
+  let assert True = program_equal(desugared, result)
+}
+
+pub fn roundtrip_case_string_pattern_test() {
+  let source =
+    "
+pub fn main(env: { action: String }) -> Int {
+    case env.action { \"refund\" -> 1  \"charge\" -> 2  _ -> 0 }
+}
+"
+  let assert Ok(original) = chute.parse(source)
+  let desugared = chute.desugar(original)
+  let result = roundtrip(source)
+  let assert True = program_equal(desugared, result)
+}
+
 pub fn roundtrip_nested_fn_type_test() {
   let source = "fn compose(f: fn(fn(Int) -> Int) -> Bool) -> Nil { Nil }"
+  let assert Ok(original) = chute.parse(source)
+  let desugared = chute.desugar(original)
+  let result = roundtrip(source)
+  let assert True = program_equal(desugared, result)
+}
+
+pub fn roundtrip_let_try_test() {
+  let source =
+    "
+pub fn main(env: {}) -> Result(Int, String) {
+    let try x = Ok(42)
+    Ok(x)
+}
+"
+  let assert Ok(original) = chute.parse(source)
+  let desugared = chute.desugar(original)
+  let result = roundtrip(source)
+  let assert True = program_equal(desugared, result)
+}
+
+pub fn roundtrip_let_try_with_type_test() {
+  let source =
+    "
+pub fn main(env: {}) -> Result(Int, String) {
+    let try x: Int = Ok(42)
+    Ok(x)
+}
+"
   let assert Ok(original) = chute.parse(source)
   let desugared = chute.desugar(original)
   let result = roundtrip(source)

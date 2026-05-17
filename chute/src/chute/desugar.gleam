@@ -46,6 +46,8 @@ fn desugar_statement(stmt: ast.Statement) -> ast.Statement {
   case stmt {
     ast.LetDecl(name, type_annotation, value) ->
       ast.LetDecl(name, type_annotation, desugar_expr(value))
+    ast.LetTryDecl(name, type_annotation, value) ->
+      ast.LetTryDecl(name, type_annotation, desugar_expr(value))
     ast.StatementExpr(expr) -> ast.StatementExpr(desugar_expr(expr))
   }
 }
@@ -56,6 +58,11 @@ fn desugar_expr(expr: ast.Expr) -> ast.Expr {
     ast.ExprGroup(inner) -> desugar_expr(inner)
 
     // Recursive: desugar children
+    ast.ExprCase(subject, branches) ->
+      ast.ExprCase(
+        desugar_expr(subject),
+        list.map(branches, desugar_case_branch),
+      )
     ast.ExprPipeline(left, right) ->
       ast.ExprPipeline(desugar_expr(left), desugar_expr(right))
     ast.ExprBinaryOp(left, op, right) ->
@@ -93,4 +100,12 @@ fn desugar_string_part(part: ast.StringPart) -> ast.StringPart {
 fn desugar_record_field(field: ast.RecordField) -> ast.RecordField {
   let ast.RecordField(name, value) = field
   ast.RecordField(name, desugar_expr(value))
+}
+
+fn desugar_case_branch(branch: ast.CaseBranch) -> ast.CaseBranch {
+  case branch {
+    ast.CaseBranch(pattern, body) ->
+      ast.CaseBranch(desugar_expr(pattern), desugar_block(body))
+    ast.CaseWildcard(body) -> ast.CaseWildcard(desugar_block(body))
+  }
 }

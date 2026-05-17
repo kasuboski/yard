@@ -122,6 +122,9 @@ fn word_to_keyword(word: String) -> token.Token {
     "let" -> token.TokenLet
     "effect" -> token.TokenEffect
     "perform" -> token.TokenPerform
+    "case" -> token.TokenCase
+    "try" -> token.TokenTry
+    "_" -> token.TokenUnderscore
     "True" -> token.TokenTrue
     "False" -> token.TokenFalse
     other -> token.TokenIdent(name: other)

@@ -1,4 +1,5 @@
 import ballast
+import ballast/effect
 import ballast/value
 import gleeunit
 import testing
@@ -329,4 +330,236 @@ pub fn gas_exhausted_test() {
     Error(value.GasExhausted) -> Nil
     _other -> panic as "expected GasExhausted"
   }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Case expressions — pattern matching with branches
+// ═══════════════════════════════════════════════════════════════════════════
+
+pub fn case_match_int_test() {
+  testing.equal(
+    testing.run(
+      "pub fn main() -> Int {
+        case 1 { 1 -> 42  _ -> 0 }
+      }",
+    ),
+    value.IntVal(42),
+  )
+}
+
+pub fn case_fallthrough_to_wildcard_test() {
+  testing.equal(
+    testing.run(
+      "pub fn main() -> Int {
+        case 99 { 1 -> 42  _ -> 0 }
+      }",
+    ),
+    value.IntVal(0),
+  )
+}
+
+pub fn case_match_string_test() {
+  testing.equal(
+    testing.run(
+      "pub fn main() -> Int {
+        case \"hello\" { \"hello\" -> 1  \"world\" -> 2  _ -> 0 }
+      }",
+    ),
+    value.IntVal(1),
+  )
+}
+
+pub fn case_match_bool_test() {
+  testing.equal(
+    testing.run(
+      "pub fn main() -> Int {
+        case True { True -> 1  False -> 0 }
+      }",
+    ),
+    value.IntVal(1),
+  )
+}
+
+pub fn case_with_block_body_test() {
+  testing.equal(
+    testing.run(
+      "pub fn main() -> Int {
+        case 1 {
+          1 -> {
+            let y = 10
+            y + 32
+          }
+          _ -> 0
+        }
+      }",
+    ),
+    value.IntVal(42),
+  )
+}
+
+pub fn case_with_variable_subject_test() {
+  testing.equal(
+    testing.run(
+      "pub fn main() -> Int {
+        let x = 5
+        case x { 5 -> 100  _ -> 0 }
+      }",
+    ),
+    value.IntVal(100),
+  )
+}
+
+pub fn case_expression_body_test() {
+  testing.equal(
+    testing.run(
+      "pub fn main() -> Int {
+        let x = 3
+        case x { 1 -> x + 10  _ -> x * 2 }
+      }",
+    ),
+    value.IntVal(6),
+  )
+}
+
+pub fn case_non_exhaustive_error_test() {
+  let err =
+    testing.run_error(
+      "pub fn main() -> Int {
+      case 99 { 1 -> 42 }
+    }",
+    )
+  let assert value.MatchError(_) = err
+  Nil
+}
+
+pub fn case_scope_isolation_test() {
+  testing.equal(
+    testing.run(
+      "pub fn main() -> Int {
+        let x = 1
+        case x {
+          1 -> {
+            let y = 42
+            y
+          }
+          _ -> 0
+        }
+      }",
+    ),
+    value.IntVal(42),
+  )
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Let try — Result unwrapping with short-circuit
+// ═══════════════════════════════════════════════════════════════════════════
+
+pub fn let_try_ok_test() {
+  testing.equal(
+    testing.run(
+      "pub fn main() -> Result(Int, String) {
+        let try x = Ok(42)
+        Ok(x)
+      }",
+    ),
+    value.OkVal(value.IntVal(42)),
+  )
+}
+
+pub fn let_try_error_short_circuits_test() {
+  testing.equal(
+    testing.run(
+      "pub fn main() -> Result(Int, String) {
+        let try x = Error(\"fail\")
+        Ok(x + 1)
+      }",
+    ),
+    value.ErrorVal(value.StringVal("fail")),
+  )
+}
+
+pub fn let_try_chained_ok_test() {
+  testing.equal(
+    testing.run(
+      "pub fn main() -> Result(Int, String) {
+        let try a = Ok(10)
+        let try b = Ok(32)
+        Ok(a + b)
+      }",
+    ),
+    value.OkVal(value.IntVal(42)),
+  )
+}
+
+pub fn let_try_chained_error_first_test() {
+  testing.equal(
+    testing.run(
+      "pub fn main() -> Result(Int, String) {
+        let try a = Error(\"first\")
+        let try b = Ok(32)
+        Ok(a + b)
+      }",
+    ),
+    value.ErrorVal(value.StringVal("first")),
+  )
+}
+
+pub fn let_try_chained_error_second_test() {
+  testing.equal(
+    testing.run(
+      "pub fn main() -> Result(Int, String) {
+        let try a = Ok(10)
+        let try b = Error(\"second\")
+        Ok(a + b)
+      }",
+    ),
+    value.ErrorVal(value.StringVal("second")),
+  )
+}
+
+pub fn let_try_with_perform_test() {
+  let result =
+    testing.start(
+      "effect fetch(id: String) -> Result(String, String)
+     pub fn main() -> Result(String, String) {
+        let try body = perform fetch(\"test\")
+        Ok(body)
+     }",
+    )
+  // Should yield the fetch effect
+  let assert effect.Yielded("fetch", [value.StringVal("test")], cont, _) =
+    result
+  // Resume with Ok — should continue
+  let resumed = ballast.resume(cont, value.OkVal(value.StringVal("data")))
+  let assert effect.EvalDone(value.OkVal(value.StringVal("data")), _) = resumed
+}
+
+pub fn let_try_perform_error_test() {
+  let result =
+    testing.start(
+      "effect fetch(id: String) -> Result(String, String)
+     pub fn main() -> Result(String, String) {
+        let try body = perform fetch(\"test\")
+        Ok(body)
+     }",
+    )
+  let assert effect.Yielded("fetch", [value.StringVal("test")], cont, _) =
+    result
+  // Resume with Error — should short-circuit
+  let resumed =
+    ballast.resume(cont, value.ErrorVal(value.StringVal("not found")))
+  let assert effect.EvalDone(value.ErrorVal(value.StringVal("not found")), _) =
+    resumed
+}
+
+pub fn let_try_type_mismatch_test() {
+  let err =
+    testing.run_error(
+      "pub fn main() -> Result(Int, String) {
+      let try x = 42
+      Ok(x)
+    }",
+    )
+  let assert value.TypeMismatch("Result", "Int") = err
+  Nil
 }

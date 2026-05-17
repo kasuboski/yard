@@ -261,6 +261,7 @@ fn split_block_items_acc(
 fn is_statement_sexp(sexp: Sexp) -> Bool {
   case sexp {
     SList([SAtom("let"), ..]) -> True
+    SList([SAtom("let-try"), ..]) -> True
     SList([SAtom("stmt"), ..]) -> True
     _ -> False
   }
@@ -277,6 +278,16 @@ fn sexp_to_statement(sexp: Sexp) -> Result(ast.Statement, String) {
     SList([SAtom("let"), SAtom(name), value_sexp]) -> {
       use value <- result.try(sexp_to_expr(value_sexp))
       Ok(ast.LetDecl(name, option.None, value))
+    }
+    SList([SAtom("let-try"), SAtom(name), type_sexp, value_sexp]) -> {
+      // let-try with type annotation
+      use type_ <- result.try(sexp_to_type(type_sexp))
+      use value <- result.try(sexp_to_expr(value_sexp))
+      Ok(ast.LetTryDecl(name, option.Some(type_), value))
+    }
+    SList([SAtom("let-try"), SAtom(name), value_sexp]) -> {
+      use value <- result.try(sexp_to_expr(value_sexp))
+      Ok(ast.LetTryDecl(name, option.None, value))
     }
     SList([SAtom("stmt"), expr_sexp]) -> {
       use expr <- result.try(sexp_to_expr(expr_sexp))
@@ -386,6 +397,12 @@ fn sexp_to_expr(sexp: Sexp) -> Result(ast.Expr, String) {
       Ok(ast.ExprPipeline(left, right))
     }
 
+    SList([SAtom("case"), subject_sexp, ..branch_sexps]) -> {
+      use subject <- result.try(sexp_to_expr(subject_sexp))
+      use branches <- result.try(list.try_map(branch_sexps, sexp_to_case_branch))
+      Ok(ast.ExprCase(subject, branches))
+    }
+
     _ -> Error("Invalid expression: " <> sexp_to_string(sexp))
   }
 }
@@ -440,6 +457,21 @@ fn unescape_string(s: String) -> String {
   |> string.replace("\\t", "\t")
   |> string.replace("\\\"", "\"")
   |> string.replace("\\\\", "\\")
+}
+
+fn sexp_to_case_branch(sexp: Sexp) -> Result(ast.CaseBranch, String) {
+  case sexp {
+    SList([SAtom("branch"), pattern_sexp, body_sexp]) -> {
+      use pattern <- result.try(sexp_to_expr(pattern_sexp))
+      use body <- result.try(sexp_to_block(body_sexp))
+      Ok(ast.CaseBranch(pattern, body))
+    }
+    SList([SAtom("wildcard"), body_sexp]) -> {
+      use body <- result.try(sexp_to_block(body_sexp))
+      Ok(ast.CaseWildcard(body))
+    }
+    _ -> Error("Invalid case branch: " <> sexp_to_string(sexp))
+  }
 }
 
 fn parse_binop(op: String) -> Result(ast.BinOp, String) {

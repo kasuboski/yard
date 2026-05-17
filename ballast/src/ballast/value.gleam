@@ -44,6 +44,7 @@ pub type RuntimeError {
   DivisionByZero
   GasExhausted
   NotCallable(type_: String)
+  MatchError(subject: String)
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -99,6 +100,8 @@ pub fn error_to_string(e: RuntimeError) -> String {
     DivisionByZero -> "Division by zero"
     GasExhausted -> "Gas exhausted (possible infinite loop)"
     NotCallable(type_) -> "Cannot call value of type: " <> type_
+    MatchError(subject) ->
+      "Non-exhaustive case: no matching branch for " <> subject
   }
 }
 

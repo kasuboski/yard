@@ -39,26 +39,91 @@ run = "cd ballast && gleam build"
 description = "Run ballast tests"
 run = "cd ballast && gleam test"
 
+# ── Yard ──────────────────────────────────────────────────────────────
+
+[tasks."yard:check"]
+description = "Type-check the yard project"
+run = "cd yard && gleam check"
+
+[tasks."yard:format"]
+description = "Check formatting for the yard project"
+run = "cd yard && gleam format --check"
+
+[tasks."yard:build"]
+description = "Build the yard project"
+run = "cd yard && gleam build"
+
+[tasks."yard:test"]
+description = "Run yard tests"
+run = "cd yard && gleam test"
+
+# ── Examples ────────────────────────────────────────────────────────────
+
+[tasks."examples:check"]
+description = "Type-check all example projects"
+run = """
+for dir in examples/*/; do
+  if [ -f "${dir}gleam.toml" ]; then
+    echo "→ Checking ${dir}"
+    (cd "$dir" && gleam check) || exit 1
+  fi
+done
+"""
+
+[tasks."examples:format"]
+description = "Check formatting for all example projects"
+run = """
+for dir in examples/*/; do
+  if [ -f "${dir}gleam.toml" ]; then
+    echo "→ Formatting ${dir}"
+    (cd "$dir" && gleam format --check) || exit 1
+  fi
+done
+"""
+
+[tasks."examples:build"]
+description = "Build all example projects"
+run = """
+for dir in examples/*/; do
+  if [ -f "${dir}gleam.toml" ]; then
+    echo "→ Building ${dir}"
+    (cd "$dir" && gleam build) || exit 1
+  fi
+done
+"""
+
+[tasks."examples:test"]
+description = "Run tests for all example projects"
+run = """
+for dir in examples/*/; do
+  if [ -f "${dir}gleam.toml" ]; then
+    echo "→ Testing ${dir}"
+    (cd "$dir" && gleam test) || exit 1
+  fi
+done
+"""
+
 # ── Top-level aliases ────────────────────────────────────────────────────
 
 [tasks.check]
 description = "Type-check all projects"
-depends = ["chute:check", "ballast:check"]
+depends = ["chute:check", "ballast:check", "yard:check", "examples:check"]
 
 [tasks.format]
 description = "Check formatting for all projects"
-depends = ["chute:format", "ballast:format"]
+depends = ["chute:format", "ballast:format", "yard:format", "examples:format"]
 
 [tasks.build]
 description = "Build all projects"
-depends = ["chute:build", "ballast:build"]
+depends = ["chute:build", "ballast:build", "yard:build", "examples:build"]
 
 [tasks.test]
 description = "Run all tests"
-depends = ["chute:test", "ballast:test"]
+depends = ["chute:test", "ballast:test", "yard:test", "examples:test"]
 
 # ── CI gate ──────────────────────────────────────────────────────────────
 
 [tasks.pre-commit]
 description = "Run all checks before committing"
 depends = ["check", "format", "build", "test"]
+

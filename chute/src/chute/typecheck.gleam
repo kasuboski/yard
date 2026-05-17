@@ -171,6 +171,23 @@ fn infer_statement(
       }
       tc.TypeCheckState(..state, env: dict.insert(state.env, name, final_type))
     }
+    ast.LetTryDecl(name, type_annotation, value) -> {
+      let #(value_type, state) = infer_expr(value, state)
+      // value must be Result(ok_type, error_type)
+      let #(ok_type, state) = tc.fresh_var(state)
+      let #(error_type, state) = tc.fresh_var(state)
+      let state =
+        tc.unify(value_type, tc.TcNamed("Result", [ok_type, error_type]), state)
+      let bound_type = case type_annotation {
+        option.Some(annotated) -> {
+          let expected = tc.ast_type_to_tc(annotated)
+          let state = tc.unify(ok_type, expected, state)
+          tc.resolve(expected, state.subst)
+        }
+        option.None -> tc.resolve(ok_type, state.subst)
+      }
+      tc.TypeCheckState(..state, env: dict.insert(state.env, name, bound_type))
+    }
     ast.StatementExpr(expr) -> {
       let #(_, state) = infer_expr(expr, state)
       state
@@ -268,6 +285,9 @@ fn infer_expr(
     // ── Closure ──────────────────────────────────────────────────────────
     ast.ExprClosure(params, body) -> infer_closure(params, body, state)
 
+    // ── Case expression ──────────────────────────────────────────────────
+    ast.ExprCase(subject, branches) -> infer_case(subject, branches, state)
+
     // ── Pipeline (should be desugared; handle gracefully) ────────────────
     ast.ExprPipeline(left, right) -> {
       let #(_, state) = infer_expr(left, state)
@@ -283,6 +303,59 @@ fn infer_expr(
 
     // ── Group (should be desugared; handle gracefully) ───────────────────
     ast.ExprGroup(inner) -> infer_expr(inner, state)
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Type inference: case expressions
+// ═══════════════════════════════════════════════════════════════════════════
+
+fn infer_case(
+  subject: ast.Expr,
+  branches: List(ast.CaseBranch),
+  state: tc.TypeCheckState,
+) -> #(tc.TcType, tc.TypeCheckState) {
+  let #(subject_type, state) = infer_expr(subject, state)
+  let #(branch_type, state) = tc.fresh_var(state)
+  let state = infer_case_branches(branches, subject_type, branch_type, state)
+  #(tc.resolve(branch_type, state.subst), state)
+}
+
+fn infer_case_branches(
+  branches: List(ast.CaseBranch),
+  subject_type: tc.TcType,
+  result_type: tc.TcType,
+  state: tc.TypeCheckState,
+) -> tc.TypeCheckState {
+  case branches {
+    [] -> state
+    [branch, ..rest] -> {
+      let state = infer_case_branch(branch, subject_type, result_type, state)
+      infer_case_branches(rest, subject_type, result_type, state)
+    }
+  }
+}
+
+fn infer_case_branch(
+  branch: ast.CaseBranch,
+  subject_type: tc.TcType,
+  result_type: tc.TcType,
+  state: tc.TypeCheckState,
+) -> tc.TypeCheckState {
+  case branch {
+    ast.CaseBranch(pattern, body) -> {
+      // Unify pattern type with subject type
+      let #(pattern_type, state) = infer_expr(pattern, state)
+      let state = tc.unify(pattern_type, subject_type, state)
+      // Unify body type with result type
+      let #(body_type, state) = infer_block(body, state)
+      tc.unify(body_type, result_type, state)
+    }
+    ast.CaseWildcard(body) -> {
+      // Wildcard always matches, just check body type
+      let #(body_type, state) = infer_block(body, state)
+      tc.unify(body_type, result_type, state)
+    }
   }
 }
 

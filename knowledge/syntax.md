@@ -6,11 +6,12 @@
 
 *   **Identifiers:** Must start with a letter or underscore, followed by alphanumeric characters or underscores: `[a-zA-Z_][a-zA-Z0-9_]*`
 *   **Keywords:** The following are reserved and cannot be used as identifiers: 
-    `pub`, `fn`, `let`, `effect`, `perform`, `True`, `False`
+    `pub`, `fn`, `let`, `try`, `effect`, `perform`, `case`, `_`, `True`, `False`
 *   **Booleans:** Strictly capitalized `True` and `False`.
 *   **Integers:** `[0-9]+`
 *   **Floats:** `[0-9]+ \. [0-9]+`
 *   **Comments:** Only single-line comments are supported, starting with `//` and ending at the newline.
+*   **Delimiters:** The `->` arrow is used in `case` branches, effect declarations, and function signatures.
 *   **Strings & Interpolation:** Enclosed in double quotes `""`. 
     *   Supported escape sequences: `\n` (newline), `\t` (tab), `\"` (quote), `\\` (backslash).
     *   String interpolation is natively supported via `${...}` where the content inside the braces evaluates as an `Expr`.
@@ -24,6 +25,7 @@ Operations follow the standard mathematical order (Principle of Least Surprise).
 4.  **Addition / Subtraction:** `+`, `-`
 5.  **Comparison:** `==`, `!=`, `<`, `>`, `<=`, `>=`
 6.  **Pipeline:** `|>` (Left-associative: passes the left expression as the first argument to the right expression).
+7.  **Branching:** `case` (Treated as a top-level expression — lowest precedence).
 
 ## A.3 Block and Return Semantics
 *   **Blocks:** Bounded by `{ }`. A block consists of zero or more statements (`let` declarations or standalone expressions).
@@ -54,11 +56,15 @@ IdList          ::= Identifier { "," Identifier } [ "," ]
 
 (* Blocks & Statements *)
 Block           ::= "{" { Statement } [ Expr ] "}"
-Statement       ::= LetDecl | Expr
+Statement       ::= LetDecl | LetTryDecl | Expr
 LetDecl         ::= "let" Identifier [ ":" Type ] "=" Expr
+LetTryDecl      ::= "let" "try" Identifier [ ":" Type ] "=" Expr
 
 (* Expressions (Ordered by Precedence, lowest to highest) *)
-Expr            ::= PipelineExpr
+Expr            ::= CaseExpr | PipelineExpr
+CaseExpr        ::= "case" Expr "{" CaseBranch { CaseBranch } "}"
+CaseBranch      ::= Expr "->" ( Expr | Block )
+                  | "_" "->" ( Expr | Block )
 PipelineExpr    ::= LogicExpr { "|>" LogicExpr }
 LogicExpr       ::= MathExpr [ ( "==" | "!=" | "<" | "<=" | ">" | ">=" ) MathExpr ]
 MathExpr        ::= Term { ( "+" | "-" ) Term }

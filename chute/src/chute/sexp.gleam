@@ -118,6 +118,13 @@ fn statement_to_sexp(stmt: ast.Statement) -> String {
       }
       "(let " <> name <> type_ann <> " " <> expr_to_sexp(value) <> ")"
     }
+    ast.LetTryDecl(name, type_annotation, value) -> {
+      let type_ann = case type_annotation {
+        option.Some(t) -> " " <> type_to_sexp(t)
+        option.None -> ""
+      }
+      "(let-try " <> name <> type_ann <> " " <> expr_to_sexp(value) <> ")"
+    }
     ast.StatementExpr(expr) -> "(stmt " <> expr_to_sexp(expr) <> ")"
   }
 }
@@ -190,6 +197,12 @@ fn expr_to_sexp(expr: ast.Expr) -> String {
       <> ") "
       <> block_to_sexp(body)
       <> ")"
+    ast.ExprCase(subject, branches) ->
+      "(case "
+      <> expr_to_sexp(subject)
+      <> " "
+      <> string.join(list.map(branches, case_branch_to_sexp), " ")
+      <> ")"
     // ExprGroup should be desugared away, but handle gracefully
     ast.ExprGroup(inner) -> expr_to_sexp(inner)
     // Pipeline should be desugared away by parser, but handle gracefully
@@ -236,4 +249,12 @@ fn escape_string(s: String) -> String {
 
 fn wrap_in_quotes(s: String) -> String {
   "\"" <> s <> "\""
+}
+
+fn case_branch_to_sexp(branch: ast.CaseBranch) -> String {
+  case branch {
+    ast.CaseBranch(pattern, body) ->
+      "(branch " <> expr_to_sexp(pattern) <> " " <> block_to_sexp(body) <> ")"
+    ast.CaseWildcard(body) -> "(wildcard " <> block_to_sexp(body) <> ")"
+  }
 }
