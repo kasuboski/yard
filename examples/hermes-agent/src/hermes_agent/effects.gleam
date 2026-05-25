@@ -5,7 +5,7 @@
 //// to accumulate emit_event payloads during a chute_exec run.
 //// The collector tracks gas_used by observing ActorCompleted events.
 
-import ballast/value.{ErrorVal, NilVal, OkVal, StringVal}
+import ballast/value.{ErrorVal, ListVal, NilVal, OkVal, RecordVal, StringVal}
 import gleam/dict
 import gleam/erlang/process
 import gleam/list
@@ -16,6 +16,7 @@ import pig/workspace/vfs
 import sqlight
 import yard/obs/events.{type HostEvent}
 import yard/runner.{type EffectHandler}
+import yard/skill_repo
 
 // ═══════════════════════════════════════════════════════════════
 // Event Collector — cell actor
@@ -53,10 +54,7 @@ pub fn new_event_collector() -> EventCollector {
             gas_used: state.gas_used,
           ))
         SetGasUsed(gas) ->
-          actor.continue(CollectorState(
-            events: state.events,
-            gas_used: gas,
-          ))
+          actor.continue(CollectorState(events: state.events, gas_used: gas))
         GetEvents(reply) -> {
           process.send(reply, list.reverse(state.events))
           actor.continue(state)
@@ -135,9 +133,11 @@ pub fn emit_event_handler(collector: EventCollector) -> EffectHandler {
         Ok(NilVal)
       }
       _ ->
-        Ok(ErrorVal(StringVal(
-          "emit_event: expected 2 string args (name, payload)",
-        )))
+        Ok(
+          ErrorVal(StringVal(
+            "emit_event: expected 2 string args (name, payload)",
+          )),
+        )
     }
   }
 }
@@ -221,19 +221,116 @@ pub fn recall_handler(conn: sqlight.Connection) -> EffectHandler {
 // Handler registry
 // ═══════════════════════════════════════════════════════════════
 
+// ═══════════════════════════════════════════════════════════════
+// Skill handlers (global DB)
+// ═══════════════════════════════════════════════════════════════
+
+/// Handler for register_skill effect: registers a skill in the global DB.
+pub fn register_skill_handler(
+  global_conn: sqlight.Connection,
+) -> EffectHandler {
+  fn(_name, args) {
+    case args {
+      [StringVal(name), StringVal(description), StringVal(source)] ->
+        case skill_repo.register(global_conn, name, description, source, []) {
+          Ok(id) -> Ok(OkVal(StringVal(id)))
+          Error(msg) -> Ok(ErrorVal(StringVal(msg)))
+        }
+      _ ->
+        Ok(
+          ErrorVal(StringVal(
+            "register_skill: expected 3 string args (name, description, source)",
+          )),
+        )
+    }
+  }
+}
+
+/// Handler for get_skill effect: looks up a skill by name.
+pub fn get_skill_handler(global_conn: sqlight.Connection) -> EffectHandler {
+  fn(_name, args) {
+    case args {
+      [StringVal(name)] ->
+        case skill_repo.lookup(global_conn, name) {
+          Ok(skill) ->
+            Ok(
+              OkVal(
+                RecordVal([
+                  #("id", StringVal(skill.id)),
+                  #("name", StringVal(skill.name)),
+                  #("description", StringVal(skill.description)),
+                  #("chute_source", StringVal(skill.chute_source)),
+                  #("status", StringVal(skill.status)),
+                ]),
+              ),
+            )
+          Error(msg) -> Ok(ErrorVal(StringVal(msg)))
+        }
+      _ -> Ok(ErrorVal(StringVal("get_skill: expected 1 string arg (name)")))
+    }
+  }
+}
+
+/// Handler for list_skills effect: lists all active skills.
+pub fn list_skills_handler(global_conn: sqlight.Connection) -> EffectHandler {
+  fn(_name, _args) {
+    case skill_repo.list_all(global_conn) {
+      Ok(skills) -> {
+        let items =
+          list.map(skills, fn(s) {
+            RecordVal([
+              #("id", StringVal(s.id)),
+              #("name", StringVal(s.name)),
+              #("description", StringVal(s.description)),
+              #("status", StringVal(s.status)),
+            ])
+          })
+        Ok(OkVal(ListVal(items)))
+      }
+      Error(msg) -> Ok(ErrorVal(StringVal(msg)))
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Handler registry
+// ═══════════════════════════════════════════════════════════════
+
 /// Build the complete set of Hermes effect handlers.
+/// Takes workspace conn (for VFS/KV) and optional global conn (for skills).
 pub fn all_handlers(
   conn: sqlight.Connection,
   collector: EventCollector,
 ) -> dict.Dict(String, EffectHandler) {
-  dict.from_list([
+  let base = [
     #("emit_event", emit_event_handler(collector)),
     #("read_file", read_file_handler(conn)),
     #("write_file", write_file_handler(conn)),
     #("list_files", list_files_handler(conn)),
     #("recall", recall_handler(conn)),
     #("store", store_handler(conn)),
-  ])
+  ]
+  dict.from_list(base)
+}
+
+/// Build handlers with skill support (requires global DB).
+pub fn all_handlers_with_global(
+  conn: sqlight.Connection,
+  global_conn: sqlight.Connection,
+  collector: EventCollector,
+) -> dict.Dict(String, EffectHandler) {
+  let base = [
+    #("emit_event", emit_event_handler(collector)),
+    #("read_file", read_file_handler(conn)),
+    #("write_file", write_file_handler(conn)),
+    #("list_files", list_files_handler(conn)),
+    #("recall", recall_handler(conn)),
+    #("store", store_handler(conn)),
+    #("register_skill", register_skill_handler(global_conn)),
+    #("get_skill", get_skill_handler(global_conn)),
+    #("list_skills", list_skills_handler(global_conn)),
+  ]
+  dict.from_list(base)
 }
 
 // ═══════════════════════════════════════════════════════════════

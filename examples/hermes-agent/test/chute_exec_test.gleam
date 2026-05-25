@@ -23,8 +23,7 @@ fn with_workspace(test_fn: fn(sqlight.Connection) -> a) -> a {
 
 /// Parse a json.Json to string, then re-parse as Dynamic for assertions.
 fn to_dynamic(j: json.Json) -> decode.Dynamic {
-  let assert Ok(d) =
-    json.parse(from: json.to_string(j), using: decode.dynamic)
+  let assert Ok(d) = json.parse(from: json.to_string(j), using: decode.dynamic)
   d
 }
 
@@ -96,7 +95,11 @@ pub fn chute_exec_with_workspace_test() {
     let assert Ok(ok_val) =
       decode.run(
         d,
-        decode.field("ok", decode.field("ok", decode.string, decode.success), decode.success),
+        decode.field(
+          "ok",
+          decode.field("ok", decode.string, decode.success),
+          decode.success,
+        ),
       )
     let assert "hello" = ok_val
   })

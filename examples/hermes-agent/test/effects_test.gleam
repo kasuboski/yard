@@ -1,4 +1,4 @@
-import ballast/value.{ErrorVal, ListVal, NilVal, OkVal, StringVal}
+import ballast/value.{ErrorVal, ListVal, NilVal, OkVal, RecordVal, StringVal}
 import gleam/dict
 import gleam/list
 import gleam/string
@@ -6,6 +6,7 @@ import gleeunit
 import hermes_agent/effects
 import pig/workspace/schema
 import sqlight
+import yard/db
 
 pub fn main() {
   gleeunit.main()
@@ -19,6 +20,16 @@ fn with_workspace(test_fn: fn(sqlight.Connection) -> a) -> a {
   let assert Ok(conn) = sqlight.open("file::memory:")
   let assert Ok(Nil) = schema.init(conn)
   test_fn(conn)
+}
+
+fn with_both_dbs(
+  test_fn: fn(sqlight.Connection, sqlight.Connection) -> a,
+) -> a {
+  let assert Ok(workspace_conn) = sqlight.open("file::memory:")
+  let assert Ok(Nil) = schema.init(workspace_conn)
+  let assert Ok(global_conn) = sqlight.open("file::memory:")
+  let assert Ok(Nil) = db.migrate(global_conn)
+  test_fn(workspace_conn, global_conn)
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -189,5 +200,84 @@ pub fn store_handler_invalid_args_test() {
     let result = handler("store", [StringVal("only_key")])
     let assert Ok(ErrorVal(StringVal(msg))) = result
     let assert True = string.contains(msg, "invalid args")
+  })
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Skill effect handlers (global DB)
+// ═══════════════════════════════════════════════════════════════
+
+pub fn register_skill_handler_test() {
+  with_both_dbs(fn(workspace_conn, global_conn) {
+    let handler = effects.register_skill_handler(global_conn)
+    let result =
+      handler("register_skill", [
+        StringVal("my_skill"),
+        StringVal("desc"),
+        StringVal("source"),
+      ])
+    let assert Ok(OkVal(StringVal(id))) = result
+    let assert True = string.length(id) > 0
+  })
+}
+
+pub fn get_skill_handler_test() {
+  with_both_dbs(fn(workspace_conn, global_conn) {
+    let reg = effects.register_skill_handler(global_conn)
+    let get = effects.get_skill_handler(global_conn)
+    let _ =
+      reg("register_skill", [
+        StringVal("my_skill"),
+        StringVal("a skill"),
+        StringVal("pub fn main() { 1 }"),
+      ])
+    let result = get("get_skill", [StringVal("my_skill")])
+    let assert Ok(OkVal(RecordVal(fields))) = result
+    let assert True = list.contains(fields, #("name", StringVal("my_skill")))
+  })
+}
+
+pub fn list_skills_handler_test() {
+  with_both_dbs(fn(workspace_conn, global_conn) {
+    let reg = effects.register_skill_handler(global_conn)
+    let ls = effects.list_skills_handler(global_conn)
+    let _ =
+      reg("register_skill", [
+        StringVal("skill_a"),
+        StringVal("a"),
+        StringVal("sa"),
+      ])
+    let _ =
+      reg("register_skill", [
+        StringVal("skill_b"),
+        StringVal("b"),
+        StringVal("sb"),
+      ])
+    let result = ls("list_skills", [])
+    let assert Ok(OkVal(ListVal(items))) = result
+    let assert 2 = list.length(items)
+  })
+}
+
+pub fn register_skill_bad_args_test() {
+  with_both_dbs(fn(workspace_conn, global_conn) {
+    let handler = effects.register_skill_handler(global_conn)
+    let result = handler("register_skill", [StringVal("only_one")])
+    let assert Ok(ErrorVal(StringVal(msg))) = result
+    let assert True = string.contains(msg, "expected 3 string args")
+  })
+}
+
+pub fn all_handlers_with_global_has_nine_keys_test() {
+  with_both_dbs(fn(workspace_conn, global_conn) {
+    let collector = effects.new_event_collector()
+    let handlers =
+      effects.all_handlers_with_global(workspace_conn, global_conn, collector)
+    let keys = dict.keys(handlers)
+    let assert 9 = list.length(keys)
+    let assert True = list.contains(keys, "register_skill")
+    let assert True = list.contains(keys, "get_skill")
+    let assert True = list.contains(keys, "list_skills")
+    effects.collector_stop(collector)
   })
 }
