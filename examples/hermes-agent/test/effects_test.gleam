@@ -274,10 +274,89 @@ pub fn all_handlers_with_global_has_nine_keys_test() {
     let handlers =
       effects.all_handlers_with_global(workspace_conn, global_conn, collector)
     let keys = dict.keys(handlers)
-    let assert 9 = list.length(keys)
+    // 6 base + 3 skills + 2 agents + tell_user + learn = 13
+    let assert 13 = list.length(keys)
     let assert True = list.contains(keys, "register_skill")
     let assert True = list.contains(keys, "get_skill")
     let assert True = list.contains(keys, "list_skills")
+    effects.collector_stop(collector)
+  })
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Agent handlers (global DB)
+// ═══════════════════════════════════════════════════════════════
+
+pub fn list_agents_handler_test() {
+  with_both_dbs(fn(_workspace_conn, global_conn) {
+    let handler = effects.list_agents_handler(global_conn)
+    // Initially empty
+    let result = handler("list_agents", [])
+    let assert Ok(OkVal(ListVal(items))) = result
+    let assert 0 = list.length(items)
+  })
+}
+
+pub fn register_agent_handler_test() {
+  with_both_dbs(fn(_workspace_conn, global_conn) {
+    let reg = effects.register_agent_handler(global_conn)
+    let ls = effects.list_agents_handler(global_conn)
+    let result =
+      reg("register_agent", [
+        StringVal("my_agent"),
+        StringVal("an agent"),
+        StringVal("pub fn main() { 1 }"),
+      ])
+    let assert Ok(OkVal(StringVal(id))) = result
+    let assert True = string.length(id) > 0
+    // Verify it shows up in list
+    let list_result = ls("list_agents", [])
+    let assert Ok(OkVal(ListVal(items))) = list_result
+    let assert 1 = list.length(items)
+  })
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Conversation handlers
+// ═══════════════════════════════════════════════════════════════
+
+pub fn tell_user_handler_test() {
+  with_workspace(fn(conn) {
+    let collector = effects.new_event_collector()
+    let handler = effects.tell_user_handler(collector)
+    let result = handler("tell_user", [StringVal("Working on it...")])
+    let assert Ok(NilVal) = result
+    let events = effects.collector_events(collector)
+    let assert [#("tell_user", "Working on it...")] = events
+    effects.collector_stop(collector)
+  })
+}
+
+pub fn learn_handler_test() {
+  with_workspace(fn(conn) {
+    let handler = effects.learn_handler(conn)
+    let result =
+      handler("learn", [StringVal("preference"), StringVal("dark mode")])
+    let assert Ok(OkVal(NilVal)) = result
+    // Verify we can recall with the prefixed key
+    let recall_handler = effects.recall_handler(conn)
+    let recall_result =
+      recall_handler("recall", [StringVal("hermes_learned:preference")])
+    let assert Ok(OkVal(StringVal("dark mode"))) = recall_result
+  })
+}
+
+pub fn all_handlers_with_global_has_13_keys_test() {
+  with_both_dbs(fn(workspace_conn, global_conn) {
+    let collector = effects.new_event_collector()
+    let handlers =
+      effects.all_handlers_with_global(workspace_conn, global_conn, collector)
+    let keys = dict.keys(handlers)
+    let assert 13 = list.length(keys)
+    let assert True = list.contains(keys, "tell_user")
+    let assert True = list.contains(keys, "learn")
+    let assert True = list.contains(keys, "list_agents")
+    let assert True = list.contains(keys, "register_agent")
     effects.collector_stop(collector)
   })
 }

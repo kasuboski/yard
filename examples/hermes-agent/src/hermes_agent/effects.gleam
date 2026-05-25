@@ -14,6 +14,7 @@ import gleam/string
 import pig/workspace/kv
 import pig/workspace/vfs
 import sqlight
+import yard/db
 import yard/obs/events.{type HostEvent}
 import yard/runner.{type EffectHandler}
 import yard/skill_repo
@@ -329,8 +330,91 @@ pub fn all_handlers_with_global(
     #("register_skill", register_skill_handler(global_conn)),
     #("get_skill", get_skill_handler(global_conn)),
     #("list_skills", list_skills_handler(global_conn)),
+    #("list_agents", list_agents_handler(global_conn)),
+    #("register_agent", register_agent_handler(global_conn)),
+    #("tell_user", tell_user_handler(collector)),
+    #("learn", learn_handler(conn)),
   ]
   dict.from_list(base)
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Agent handlers (global DB)
+// ═══════════════════════════════════════════════════════════════
+
+/// Handler for list_agents effect: lists all registered agents.
+pub fn list_agents_handler(global_conn: sqlight.Connection) -> EffectHandler {
+  fn(_name, _args) {
+    case db.list_agents(global_conn) {
+      Ok(agents) -> {
+        let items =
+          list.map(agents, fn(a) {
+            RecordVal([
+              #("id", StringVal(a.id)),
+              #("name", StringVal(a.name)),
+              #("status", StringVal(a.status)),
+              #("actor_hash", StringVal(a.actor_hash)),
+            ])
+          })
+        Ok(OkVal(ListVal(items)))
+      }
+      Error(_) -> Ok(ErrorVal(StringVal("Database error listing agents")))
+    }
+  }
+}
+
+/// Handler for register_agent effect: registers a new agent.
+pub fn register_agent_handler(
+  global_conn: sqlight.Connection,
+) -> EffectHandler {
+  fn(_name, args) {
+    case args {
+      [StringVal(name), StringVal(description), StringVal(source)] ->
+        case db.insert_agent(global_conn, name, description, source, "active") {
+          Ok(id) -> Ok(OkVal(StringVal(id)))
+          Error(_) -> Ok(ErrorVal(StringVal("Failed to register agent")))
+        }
+      _ ->
+        Ok(
+          ErrorVal(StringVal(
+            "register_agent: expected 3 string args (name, description, source)",
+          )),
+        )
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Conversation handlers
+// ═══════════════════════════════════════════════════════════════
+
+/// Handler for tell_user effect: records a message for the user.
+pub fn tell_user_handler(collector: EventCollector) -> EffectHandler {
+  fn(_name, args) {
+    case args {
+      [StringVal(message)] -> {
+        collector_record(collector, "tell_user", message)
+        Ok(NilVal)
+      }
+      _ -> Ok(ErrorVal(StringVal("tell_user: expected 1 string arg (message)")))
+    }
+  }
+}
+
+/// Handler for learn effect: stores a fact with a "hermes_learned:" prefix.
+pub fn learn_handler(conn: sqlight.Connection) -> EffectHandler {
+  fn(_name, args) {
+    case args {
+      [StringVal(key), StringVal(fact)] -> {
+        let prefixed_key = "hermes_learned:" <> key
+        case kv.remember(conn, prefixed_key, fact) {
+          Ok(Nil) -> Ok(OkVal(NilVal))
+          Error(err) -> Ok(ErrorVal(StringVal(kv_error(err))))
+        }
+      }
+      _ -> Ok(ErrorVal(StringVal("learn: expected 2 string args (key, fact)")))
+    }
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════
