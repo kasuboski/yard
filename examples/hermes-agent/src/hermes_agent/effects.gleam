@@ -8,12 +8,15 @@
 import ballast/value.{ErrorVal, ListVal, NilVal, OkVal, RecordVal, StringVal}
 import gleam/dict
 import gleam/erlang/process
+import gleam/int
 import gleam/list
+import gleam/option
 import gleam/otp/actor
 import gleam/string
 import pig/workspace/kv
 import pig/workspace/vfs
 import sqlight
+import yard/cron_engine
 import yard/db
 import yard/obs/events.{type HostEvent}
 import yard/runner.{type EffectHandler}
@@ -413,6 +416,77 @@ pub fn learn_handler(conn: sqlight.Connection) -> EffectHandler {
         }
       }
       _ -> Ok(ErrorVal(StringVal("learn: expected 2 string args (key, fact)")))
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Cron handlers (global DB via cron engine)
+// ═══════════════════════════════════════════════════════════════
+
+/// Handler for schedule_cron effect: registers a cron schedule.
+/// Uses global_conn to look up skill by name, then registers via engine.
+pub fn schedule_cron_handler(
+  engine: cron_engine.CronEngine,
+  global_conn: sqlight.Connection,
+) -> EffectHandler {
+  fn(_name, args) {
+    case args {
+      [StringVal(cron_expr), StringVal(skill_name)] ->
+        case skill_repo.lookup(global_conn, skill_name) {
+          Ok(skill) ->
+            case
+              cron_engine.register(
+                engine,
+                skill_id: skill.id,
+                cron_expr: cron_expr,
+                agent_id: option.None,
+              )
+            {
+              Ok(id) -> Ok(OkVal(StringVal(id)))
+              Error(_) ->
+                Ok(ErrorVal(StringVal("schedule_cron: failed to register")))
+            }
+          Error(msg) -> Ok(ErrorVal(StringVal(msg)))
+        }
+      _ ->
+        Ok(
+          ErrorVal(StringVal(
+            "schedule_cron: expected 2 string args (cron_expr, skill_name)",
+          )),
+        )
+    }
+  }
+}
+
+/// Handler for list_crons effect: lists all active schedules.
+pub fn list_crons_handler(engine: cron_engine.CronEngine) -> EffectHandler {
+  fn(_name, _args) {
+    let schedules = cron_engine.list_schedules(engine)
+    let items =
+      list.map(schedules, fn(s) {
+        RecordVal([
+          #("id", StringVal(s.id)),
+          #("cron_expr", StringVal(s.cron_expr)),
+          #("skill_id", StringVal(s.skill_id)),
+          #("status", StringVal(s.status)),
+          #("next_fire_at", StringVal(int.to_string(s.next_fire_at))),
+        ])
+      })
+    Ok(OkVal(ListVal(items)))
+  }
+}
+
+/// Handler for cancel_cron effect: cancels a schedule.
+pub fn cancel_cron_handler(engine: cron_engine.CronEngine) -> EffectHandler {
+  fn(_name, args) {
+    case args {
+      [StringVal(id)] ->
+        case cron_engine.cancel(engine, id) {
+          Ok(Nil) -> Ok(OkVal(NilVal))
+          Error(_) -> Ok(ErrorVal(StringVal("cancel_cron: failed to cancel")))
+        }
+      _ -> Ok(ErrorVal(StringVal("cancel_cron: expected 1 string arg (id)")))
     }
   }
 }

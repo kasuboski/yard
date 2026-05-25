@@ -6,7 +6,9 @@ import gleeunit
 import hermes_agent/effects
 import pig/workspace/schema
 import sqlight
+import yard/cron_engine
 import yard/db
+import yard/skill_repo
 
 pub fn main() {
   gleeunit.main()
@@ -358,5 +360,100 @@ pub fn all_handlers_with_global_has_13_keys_test() {
     let assert True = list.contains(keys, "list_agents")
     let assert True = list.contains(keys, "register_agent")
     effects.collector_stop(collector)
+  })
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Cron handlers
+// ═══════════════════════════════════════════════════════════════
+
+pub fn schedule_cron_handler_test() {
+  with_both_dbs(fn(_workspace_conn, global_conn) {
+    let assert Ok(engine) = cron_engine.start(global_conn)
+    let handler = effects.schedule_cron_handler(engine, global_conn)
+
+    // First register a skill so we can schedule it
+    let _ =
+      skill_repo.register(
+        global_conn,
+        "cron-skill",
+        "A skill",
+        "pub fn main(env: {}) -> Int { 42 }",
+        [],
+      )
+
+    let result =
+      handler("schedule_cron", [StringVal("0 * * * *"), StringVal("cron-skill")])
+    let assert Ok(OkVal(StringVal(id))) = result
+    let assert True = string.length(id) > 0
+
+    // Verify it shows up in list
+    let ls = effects.list_crons_handler(engine)
+    let list_result = ls("list_crons", [])
+    let assert Ok(OkVal(ListVal(items))) = list_result
+    let assert 1 = list.length(items)
+
+    cron_engine.stop(engine)
+  })
+}
+
+pub fn schedule_cron_bad_args_test() {
+  with_both_dbs(fn(_workspace_conn, global_conn) {
+    let assert Ok(engine) = cron_engine.start(global_conn)
+    let handler = effects.schedule_cron_handler(engine, global_conn)
+
+    let result = handler("schedule_cron", [StringVal("only one")])
+    let assert Ok(ErrorVal(StringVal(msg))) = result
+    let assert True = string.contains(msg, "expected 2")
+
+    cron_engine.stop(engine)
+  })
+}
+
+pub fn list_crons_handler_empty_test() {
+  with_both_dbs(fn(_workspace_conn, global_conn) {
+    let assert Ok(engine) = cron_engine.start(global_conn)
+    let handler = effects.list_crons_handler(engine)
+
+    let result = handler("list_crons", [])
+    let assert Ok(OkVal(ListVal(items))) = result
+    let assert 0 = list.length(items)
+
+    cron_engine.stop(engine)
+  })
+}
+
+pub fn cancel_cron_handler_test() {
+  with_both_dbs(fn(_workspace_conn, global_conn) {
+    let assert Ok(engine) = cron_engine.start(global_conn)
+    let schedule_handler = effects.schedule_cron_handler(engine, global_conn)
+    let cancel_handler = effects.cancel_cron_handler(engine)
+    let list_handler = effects.list_crons_handler(engine)
+
+    // Register a skill and schedule it
+    let _ =
+      skill_repo.register(
+        global_conn,
+        "cancel-skill",
+        "A skill",
+        "pub fn main(env: {}) -> Int { 42 }",
+        [],
+      )
+    let assert Ok(OkVal(StringVal(id))) =
+      schedule_handler("schedule_cron", [
+        StringVal("0 * * * *"),
+        StringVal("cancel-skill"),
+      ])
+
+    // Cancel it
+    let cancel_result = cancel_handler("cancel_cron", [StringVal(id)])
+    let assert Ok(OkVal(NilVal)) = cancel_result
+
+    // Verify it's gone from list
+    let list_result = list_handler("list_crons", [])
+    let assert Ok(OkVal(ListVal(items))) = list_result
+    let assert 0 = list.length(items)
+
+    cron_engine.stop(engine)
   })
 }

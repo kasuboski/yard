@@ -3,6 +3,7 @@
 
 packages = [
   { name = "argv", version = "1.1.0", build_tools = ["gleam"], requirements = [], otp_app = "argv", source = "hex", outer_checksum = "3277D100448BDB4A29B6D58C0F36F631CBC349E8BDD09766C6309DF202831140" },
+  { name = "automata", version = "0.10.0", build_tools = ["gleam"], requirements = ["gleam_stdlib"], otp_app = "automata", source = "hex", outer_checksum = "3B24A0ABD8F7B024FF9EC4B675F435F27B2071E129E649F4FCB2CF49616D4391" },
   { name = "ballast", version = "0.1.0", build_tools = ["gleam"], requirements = ["chute", "gleam_stdlib"], source = "local", path = "../../ballast" },
   { name = "birl", version = "1.9.0", build_tools = ["gleam"], requirements = ["gleam_regexp", "gleam_stdlib", "gleam_time", "ranger"], otp_app = "birl", source = "hex", outer_checksum = "9924A2C3EECD33A5C94CD6859570261F2620435C54DAC5F2B00E5E6C806EEC6F" },
   { name = "chute", version = "0.1.0", build_tools = ["gleam"], requirements = ["gleam_stdlib"], source = "local", path = "../../chute" },
@@ -34,7 +35,7 @@ packages = [
   { name = "telemetry", version = "1.4.2", build_tools = ["rebar3"], requirements = [], otp_app = "telemetry", source = "hex", outer_checksum = "928F6495066506077862C0D1646609EED891A4326BEE3126BA54B60AF61FEBB1" },
   { name = "temporary", version = "1.0.0", build_tools = ["gleam"], requirements = ["envoy", "exception", "filepath", "gleam_crypto", "gleam_stdlib", "simplifile"], otp_app = "temporary", source = "hex", outer_checksum = "51C0FEF4D72CE7CA507BD188B21C1F00695B3D5B09D7DFE38240BFD3A8E1E9B3" },
   { name = "tom", version = "2.1.0", build_tools = ["gleam"], requirements = ["gleam_stdlib", "gleam_time"], otp_app = "tom", source = "hex", outer_checksum = "DCF04CB7AB35D58CFC598C66EA2E1816D160759802C89B2BA6238780D59BC256" },
-  { name = "yard", version = "0.1.0", build_tools = ["gleam"], requirements = ["ballast", "birl", "chute", "gleam_erlang", "gleam_json", "gleam_otp", "gleam_stdlib", "gluid", "logging", "parrot", "simplifile", "sqlight", "telemetry"], source = "local", path = "../../yard" },
+  { name = "yard", version = "0.1.0", build_tools = ["gleam"], requirements = ["automata", "ballast", "birl", "chute", "gleam_erlang", "gleam_json", "gleam_otp", "gleam_stdlib", "gluid", "logging", "parrot", "simplifile", "sqlight", "telemetry"], source = "local", path = "../../yard" },
 ]
 
 [requirements]
