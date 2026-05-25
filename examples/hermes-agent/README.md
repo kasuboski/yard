@@ -1,6 +1,6 @@
 # Hermes Agent — 5-Pillar Agentic Operating System
 
-A long-lived autonomous agent on the BEAM that accomplishes tasks by **writing and executing programs** rather than calling APIs directly. Built on [Pig](https://github.com/joshuabamboo/pig) (agent runtime), [Yard](../../yard/) (host runtime + observability), [Chute](../../chute/) (language), and [Ballast](../../ballast/) (sandboxed evaluator).
+A long-lived autonomous agent on the BEAM that accomplishes tasks by **writing and executing programs** rather than calling APIs directly. Built on [Pig](https://github.com/kasuboski/pig) (agent runtime), [Yard](../../yard/) (host runtime + observability), [Chute](../../chute/) (language), and [Ballast](../../ballast/) (sandboxed evaluator).
 
 ```
 LLM (OpenAI-compatible)
