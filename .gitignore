@@ -13,3 +13,9 @@ STATUS.md
 
 # Lustre dev binaries
 **/.lustre/bin/
+
+# ── Parrot (sqlc codegen) ─────────────────────────────────────
+# The build/.parrot/ directory contains the auto-downloaded sqlc binary
+# and intermediate files. Regenerate with: gleam run -m parrot
+# The generated sql.gleam IS checked in (see note below).
+**/build/.parrot/
