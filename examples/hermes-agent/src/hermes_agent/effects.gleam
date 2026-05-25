@@ -341,6 +341,34 @@ pub fn all_handlers_with_global(
   dict.from_list(base)
 }
 
+/// Build handlers with cron support (requires engine + global DB).
+pub fn all_handlers_with_cron(
+  conn: sqlight.Connection,
+  global_conn: sqlight.Connection,
+  collector: EventCollector,
+  engine: cron_engine.CronEngine,
+) -> dict.Dict(String, EffectHandler) {
+  let base = [
+    #("emit_event", emit_event_handler(collector)),
+    #("read_file", read_file_handler(conn)),
+    #("write_file", write_file_handler(conn)),
+    #("list_files", list_files_handler(conn)),
+    #("recall", recall_handler(conn)),
+    #("store", store_handler(conn)),
+    #("register_skill", register_skill_handler(global_conn)),
+    #("get_skill", get_skill_handler(global_conn)),
+    #("list_skills", list_skills_handler(global_conn)),
+    #("list_agents", list_agents_handler(global_conn)),
+    #("register_agent", register_agent_handler(global_conn)),
+    #("tell_user", tell_user_handler(collector)),
+    #("learn", learn_handler(conn)),
+    #("schedule_cron", schedule_cron_handler(engine, global_conn)),
+    #("list_crons", list_crons_handler(engine)),
+    #("cancel_cron", cancel_cron_handler(engine)),
+  ]
+  dict.from_list(base)
+}
+
 // ═══════════════════════════════════════════════════════════════
 // Agent handlers (global DB)
 // ═══════════════════════════════════════════════════════════════

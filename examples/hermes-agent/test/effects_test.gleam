@@ -457,3 +457,25 @@ pub fn cancel_cron_handler_test() {
     cron_engine.stop(engine)
   })
 }
+
+pub fn all_handlers_with_cron_has_16_keys_test() {
+  with_both_dbs(fn(workspace_conn, global_conn) {
+    let assert Ok(engine) = cron_engine.start(global_conn)
+    let collector = effects.new_event_collector()
+    let handlers =
+      effects.all_handlers_with_cron(
+        workspace_conn,
+        global_conn,
+        collector,
+        engine,
+      )
+    let keys = dict.keys(handlers)
+    // 13 base + schedule_cron + list_crons + cancel_cron = 16
+    let assert 16 = list.length(keys)
+    let assert True = list.contains(keys, "schedule_cron")
+    let assert True = list.contains(keys, "list_crons")
+    let assert True = list.contains(keys, "cancel_cron")
+    effects.collector_stop(collector)
+    cron_engine.stop(engine)
+  })
+}

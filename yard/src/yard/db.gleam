@@ -449,6 +449,33 @@ pub fn get_agent_handlers(
   |> result.replace_error(Nil)
 }
 
+/// Insert an agent handler binding.
+pub fn insert_agent_handler(
+  conn: sqlight.Connection,
+  agent_id: String,
+  effect_name: String,
+  handler_name: String,
+) -> Result(Nil, Nil) {
+  let id = new_id()
+  let now = now_ts()
+  let #(sql_str, params) =
+    sql.insert_agent_handler(
+      id: id,
+      agent_id: agent_id,
+      effect_name: effect_name,
+      handler_name: handler_name,
+      created_at: now,
+    )
+  sqlight.query(
+    sql_str,
+    on: conn,
+    with: params_to_values(params),
+    expecting: dyn_decode.success(Nil),
+  )
+  |> result.map(fn(_) { Nil })
+  |> result.replace_error(Nil)
+}
+
 // ═══════════════════════════════════════════════════════════════
 // Skill Queries
 // ═══════════════════════════════════════════════════════════════

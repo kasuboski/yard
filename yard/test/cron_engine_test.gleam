@@ -15,7 +15,9 @@
 
 import automata/cron
 import automata/schedule/ast as schedule_ast
+import ballast/value
 import birl
+import gleam/erlang/process
 import gleam/int
 import gleam/list
 import gleam/option
@@ -25,6 +27,7 @@ import gleeunit
 import sqlight
 import yard/cron_engine
 import yard/db
+import yard/handler_registry
 import yard/skill_repo
 
 pub fn main() {
@@ -424,4 +427,118 @@ pub fn compute_next_fire_time_test() {
   let next_unix = datetime_to_unix(next_dt)
   let now_unix = birl.to_unix(now)
   let assert True = next_unix >= now_unix
+}
+
+// ═══════════════════════════════════════════════════════════════
+// End-to-end: tick with handler registry
+// ═══════════════════════════════════════════════════════════════
+
+/// A handler builder that sends effect call info to a subject.
+fn recording_builder(
+  recorder: process.Subject(String),
+) -> handler_registry.HandlerBuilder {
+  fn(_ctx) {
+    fn(name, args) {
+      let label =
+        args
+        |> list.map(fn(a) {
+          case a {
+            value.StringVal(s) -> s
+            other -> value.value_to_string(other)
+          }
+        })
+        |> string.join(", ")
+      process.send(recorder, name <> "(" <> label <> ")")
+      Ok(value.OkVal(value.StringVal("recorded")))
+    }
+  }
+}
+
+pub fn tick_fires_skill_with_registered_handlers_test() {
+  with_db(fn(conn) {
+    // Set up agent with handler bindings
+    let assert Ok(agent_id) =
+      db.insert_agent(
+        conn,
+        "recording-agent",
+        "Records effect calls",
+        "pub fn main(env: {}) -> String { let try x = perform greet(\"world\") Ok(x) }",
+        "active",
+      )
+    let assert Ok(Nil) =
+      db.insert_agent_handler(conn, agent_id, "greet", "recorder")
+
+    // Create skill
+    let skill_source =
+      "effect greet(name: String) -> Result(String, String)\n"
+      <> "pub fn main(env: {}) -> Result(String, String) { perform greet(\"world\") }"
+    let assert Ok(skill_id) =
+      skill_repo.register(conn, "greet-skill", "Greets", skill_source, [])
+
+    // Build registry with our recording handler
+    let recorder = process.new_subject()
+    let reg =
+      handler_registry.new()
+      |> handler_registry.register("recorder", recording_builder(recorder))
+
+    // Start engine with registry
+    let assert Ok(engine) = cron_engine.start_with_registry(conn, reg)
+
+    // Insert a due schedule tied to this agent
+    let assert Ok(_schedule_id) =
+      db.insert_schedule(
+        conn,
+        agent_id: option.Some(agent_id),
+        skill_id: skill_id,
+        cron_expr: "0 * * * *",
+        next_fire_at: past_ts(),
+      )
+    cron_engine.reload(engine)
+
+    // Tick
+    let fired = cron_engine.tick(engine)
+    let assert 1 = list.length(fired)
+
+    // The handler should have been called
+    let assert Ok(recorded_msg) = process.receive(recorder, 2000)
+    let assert True = string.contains(recorded_msg, "greet")
+    let assert True = string.contains(recorded_msg, "world")
+
+    cron_engine.stop(engine)
+  })
+}
+
+pub fn tick_fires_skill_without_agent_uses_minimal_handlers_test() {
+  with_db(fn(conn) {
+    // Create a skill that needs no effects
+    let skill_source = "pub fn main(env: {}) -> Int { 42 }"
+    let assert Ok(skill_id) =
+      skill_repo.register(
+        conn,
+        "pure-skill",
+        "Pure computation",
+        skill_source,
+        [],
+      )
+
+    let reg = handler_registry.new()
+    let assert Ok(engine) = cron_engine.start_with_registry(conn, reg)
+
+    // Schedule with no agent_id
+    let assert Ok(_schedule_id) =
+      db.insert_schedule(
+        conn,
+        agent_id: option.None,
+        skill_id: skill_id,
+        cron_expr: "0 * * * *",
+        next_fire_at: past_ts(),
+      )
+    cron_engine.reload(engine)
+
+    let fired = cron_engine.tick(engine)
+    let assert 1 = list.length(fired)
+    let assert "pure-skill" = list.first(fired) |> result.unwrap("")
+
+    cron_engine.stop(engine)
+  })
 }

@@ -29,6 +29,7 @@ import gluid
 import logging
 import sqlight
 import yard/db
+import yard/handler_registry
 import yard/loader
 import yard/obs/events
 import yard/runner
@@ -54,7 +55,10 @@ pub type EngineMsg {
 
 /// Internal engine state.
 pub type EngineState {
-  EngineState(conn: sqlight.Connection)
+  EngineState(
+    conn: sqlight.Connection,
+    registry: handler_registry.HandlerRegistry,
+  )
 }
 
 /// The cron engine actor handle.
@@ -65,10 +69,18 @@ pub type CronEngine =
 // Public API
 // ═══════════════════════════════════════════════════════════════
 
-/// Start the cron engine with a global DB connection.
+/// Start the cron engine with a global DB connection (empty registry).
 pub fn start(conn: sqlight.Connection) -> Result(CronEngine, Nil) {
+  start_with_registry(conn, handler_registry.new())
+}
+
+/// Start the cron engine with a global DB connection and handler registry.
+pub fn start_with_registry(
+  conn: sqlight.Connection,
+  registry: handler_registry.HandlerRegistry,
+) -> Result(CronEngine, Nil) {
   let engine =
-    actor.new(EngineState(conn: conn))
+    actor.new(EngineState(conn: conn, registry: registry))
     |> actor.on_message(fn(state, msg) {
       case msg {
         Register(skill_id:, cron_expr:, agent_id:, reply_to:) ->
@@ -263,11 +275,15 @@ fn fire_schedule(
           Error(Nil)
         }
         Ok(loaded) -> {
-          // Run with minimal handlers
-          let handlers =
-            dict.from_list([
-              #("emit_event", fn(_name, _args) { Ok(value.NilVal) }),
-            ])
+          // Resolve handlers: if schedule has agent_id, load from registry.
+          // Otherwise, use minimal fallback handlers.
+          let handlers = case schedule.agent_id {
+            option.Some(agent_id) -> resolve_handlers(state, agent_id)
+            option.None ->
+              dict.from_list([
+                #("emit_event", fn(_name, _args) { Ok(value.NilVal) }),
+              ])
+          }
           let emit = fn(_event: events.HostEvent) { Nil }
           let run_id = gluid.guidv4() |> string.lowercase()
           let config =
@@ -303,6 +319,33 @@ fn fire_schedule(
   }
 
   result
+}
+
+/// Resolve handlers for an agent via the registry.
+/// Falls back to minimal emit_event handler if resolution fails.
+fn resolve_handlers(
+  state: EngineState,
+  agent_id: String,
+) -> dict.Dict(String, runner.EffectHandler) {
+  let ctx =
+    handler_registry.make_context(
+      workspace_conn: option.None,
+      emit: fn(_event: events.HostEvent) { Nil },
+    )
+  case
+    handler_registry.resolve_for_agent(
+      state.registry,
+      state.conn,
+      agent_id,
+      ctx,
+    )
+  {
+    Ok(handlers) -> handlers
+    Error(_) ->
+      dict.from_list([
+        #("emit_event", fn(_name, _args) { Ok(value.NilVal) }),
+      ])
+  }
 }
 
 /// Reschedule a schedule: compute the next fire time and update DB.
