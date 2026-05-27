@@ -336,7 +336,7 @@ pub fn tick_reschedules_after_fire_test() {
     let assert Ok(engine) = cron_engine.start(conn)
 
     // Insert schedule due now
-    let assert Ok(schedule_id) =
+    let assert Ok(_schedule_id) =
       db.insert_schedule(
         conn,
         agent_id: option.None,
@@ -485,7 +485,7 @@ pub fn tick_fires_skill_with_registered_handlers_test() {
     let assert Ok(engine) = cron_engine.start_with_registry(conn, reg)
 
     // Insert a due schedule tied to this agent
-    let assert Ok(_schedule_id) =
+    let assert Ok(___schedule_id) =
       db.insert_schedule(
         conn,
         agent_id: option.Some(agent_id),

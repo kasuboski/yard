@@ -13,7 +13,6 @@ import ballast/value
 import gleam/dict
 import gleam/list
 import gleam/option
-import gleam/result
 import gleam/string
 import gleeunit
 import sqlight

@@ -50,7 +50,7 @@ pub fn insert_skill_creates_record_test() {
 
 pub fn get_skill_by_name_test() {
   with_db(fn(conn) {
-    let assert Ok(_id) =
+    let assert Ok(__id) =
       db.insert_skill(conn, "my_skill", "desc", "pub fn main(env) { 1 }", "[]")
     let assert Ok(found) = db.get_skill_by_name(conn, "my_skill")
     let assert option.Some(skill) = found
@@ -66,7 +66,7 @@ pub fn get_skill_missing_returns_none_test() {
 
 pub fn list_skills_returns_active_only_test() {
   with_db(fn(conn) {
-    let assert Ok(_id1) =
+    let assert Ok(__id1) =
       db.insert_skill(conn, "skill_a", "desc a", "source a", "[]")
     let assert Ok(_id2) =
       db.insert_skill(conn, "skill_b", "desc b", "source b", "[]")
@@ -118,7 +118,7 @@ pub fn insert_schedule_creates_record_test() {
       db.insert_schedule(conn, option.None, skill_id, "*/5 * * * *", 1000)
     let assert Ok(found) = db.get_schedule(conn, id)
     let assert option.Some(schedule) = found
-    let assert skill_id = schedule.skill_id
+    let _skill_id = schedule.skill_id
     let assert "*/5 * * * *" = schedule.cron_expr
     let assert "active" = schedule.status
     let assert 1000 = schedule.next_fire_at
@@ -134,7 +134,7 @@ pub fn get_schedule_by_id_test() {
       db.insert_schedule(conn, option.None, skill_id, "0 * * * *", 500)
     let assert Ok(found) = db.get_schedule(conn, id)
     let assert option.Some(schedule) = found
-    let assert id = schedule.id
+    let _id = schedule.id
   })
 }
 
@@ -210,7 +210,7 @@ pub fn schedule_with_agent_id_test() {
     let assert Ok(found) = db.get_schedule(conn, id)
     let assert option.Some(schedule) = found
     let assert option.Some(aid) = schedule.agent_id
-    let assert agent_id = aid
+    let _agent_id = aid
   })
 }
 
@@ -398,7 +398,7 @@ pub fn get_or_create_session_returns_existing_test() {
   with_db(fn(conn) {
     let assert Ok(id1) = db.get_or_create_session(conn)
     let assert Ok(id2) = db.get_or_create_session(conn)
-    let assert id1 = id2
+    let assert True = id1 == id2
   })
 }
 

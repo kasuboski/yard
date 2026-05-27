@@ -23,7 +23,7 @@ fn with_db(test_fn: fn(sqlight.Connection) -> a) -> a {
 
 pub fn register_creates_skill_test() {
   with_db(fn(conn) {
-    let assert Ok(_id) =
+    let assert Ok(__id) =
       skill_repo.register(
         conn,
         "health_check",
@@ -51,7 +51,7 @@ pub fn register_generates_id_and_hash_test() {
     let assert True = string.length(id) > 0
     // Lookup should work
     let assert Ok(skill) = skill_repo.lookup(conn, "my_skill")
-    let assert id = skill.id
+    let _id = skill.id
   })
 }
 

@@ -2,7 +2,6 @@
 
 import ballast/value
 import gleam/list
-import gleam/option
 import gleeunit
 import hermes_agent/chute_exec
 import pig/workspace/schema

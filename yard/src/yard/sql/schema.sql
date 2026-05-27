@@ -105,6 +105,7 @@ CREATE TABLE IF NOT EXISTS runs (
 
 CREATE TABLE IF NOT EXISTS chat_sessions (
   id TEXT PRIMARY KEY,
+  user_key TEXT,
   provider_id TEXT REFERENCES providers(id),
   status TEXT NOT NULL DEFAULT 'active',
   created_at INTEGER NOT NULL,

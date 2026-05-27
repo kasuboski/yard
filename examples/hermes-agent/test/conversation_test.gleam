@@ -7,16 +7,14 @@
 //// optional tool calls to exercise the full agent loop.
 
 import gleam/erlang/process
-import gleam/int
 import gleam/json
-import gleam/list
 import gleam/option
 import gleam/otp/actor
 import gleam/string
 import gleeunit
 import hermes_agent/chute_exec
 import pig
-import pig/ai/message.{type Message}
+import pig/ai/message
 import pig/ai/provider
 import pig/workspace/schema
 import sqlight
@@ -60,10 +58,6 @@ fn counter_next(counter: process.Subject(CounterMsg)) -> Int {
   process.call(counter, 1000, fn(reply_to) { CounterNext(reply_to) })
 }
 
-fn counter_get(counter: process.Subject(CounterMsg)) -> Int {
-  process.call(counter, 1000, fn(reply_to) { CounterGet(reply_to) })
-}
-
 fn counter_stop(counter: process.Subject(CounterMsg)) -> Nil {
   process.send(counter, CounterStop)
 }
@@ -103,7 +97,7 @@ fn make_tool_call(id: String, source: String) -> message.ToolCall {
 // ═══════════════════════════════════════════════════════════════
 
 pub fn single_turn_no_tools_test() {
-  with_workspace(fn(conn) {
+  with_workspace(fn(_conn) {
     let config =
       pig.new(text_provider("Hello! I am Hermes."))
       |> pig.with_system_prompt("You are a test agent.")

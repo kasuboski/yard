@@ -1,9 +1,8 @@
 //// Hermes Agent — 5-Pillar Agentic Operating System on the BEAM
 ////
-//// Main entry point. Wires together:
-//// - Pig (agent runtime with LLM provider)
-//// - Yard (host runtime with observability)
-//// - Ballast (sandboxed Chute evaluator)
+//// CLI entry point. Uses the same session machinery as the Telegram
+//// gateway (HermesSession, chat_messages, workspace persistence) but
+//// runs a single prompt and exits.
 ////
 //// The agent uses chute_exec as its primary tool — the LLM writes Chute
 //// programs which are executed in Ballast's sandbox with Hermes effect
@@ -34,18 +33,18 @@ import envoy
 import gleam/erlang/process
 import gleam/io
 import gleam/result
-import pig
-import pig/ai/error
-import pig/ai/message
 import pig/ai/openai
 import pig/workspace
+import simplifile
+import yard/db
 import yard/obs/dispatcher
-import yard/obs/session
+import yard/obs/session as yard_session
 import yard/obs/terminal
 import yard/runner
 
 import hermes_agent/chute_exec
 import hermes_agent/prompt
+import hermes_agent/session
 
 // ═══════════════════════════════════════════════════════════════
 // Config — Environment Variables
@@ -66,42 +65,9 @@ fn openai_model() -> String {
   |> result.unwrap("llama3")
 }
 
-// ═══════════════════════════════════════════════════════════════
-// Agent Construction
-// ═══════════════════════════════════════════════════════════════
-
-/// Build a Hermes PigConfig with all wiring in place.
-///
-/// Creates a workspace, registers the chute_exec tool,
-/// sets the system prompt, and configures observability.
-/// Yard events from Ballast flow to the Yard dispatcher.
-pub fn build_config(
-  workspace_path: String,
-  yard_dispatcher: process.Subject(dispatcher.DispatcherMessage),
-) -> pig.PigConfig {
-  let provider =
-    openai.provider_with_base_url(
-      openai_api_key(),
-      openai_model(),
-      openai_base_url(),
-    )
-
-  // Open workspace — VFS + KV for the agent.
-  // Note: workspace is SQLite-backed and persists across runs.
-  // Delete the db file to start fresh.
-  let assert Ok(ws) = workspace.open(workspace_path)
-  let conn = workspace.connection(ws)
-
-  // Build chute_exec tool with workspace access + Yard observability
-  let cfg = chute_exec.config(conn, runner.emit_to_dispatcher(yard_dispatcher))
-  let chute_tool = chute_exec.tool(cfg)
-
-  pig.new(provider.call)
-  |> pig.with_model("hermes")
-  |> pig.with_agent_name("hermes-agent")
-  |> pig.with_system_prompt(prompt.system_prompt())
-  |> pig.with_tool(chute_tool)
-  |> pig.with_terminal_output()
+fn db_dir() -> String {
+  envoy.get("HERMES_DB_DIR")
+  |> result.unwrap("/tmp/hermes")
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -118,15 +84,17 @@ pub fn main() {
   io.println("")
 
   // ── 1. Config ────────────────────────────────────────────────
-  // Note: workspace_path uses a fixed SQLite DB so VFS/KV state
-  // persists between runs. Delete the file to start fresh.
-  let workspace_path = "/tmp/hermes_workspace.db"
-  let session_path =
-    "/tmp/hermes_session_" <> session.iso_timestamp() <> ".jsonl"
+  let dir = db_dir()
+  let _ = simplifile.create_directory_all(dir)
+
+  let workspace_path = dir <> "/hermes_workspace.db"
+  let yard_session_path =
+    dir <> "/hermes_obs_" <> yard_session.iso_timestamp() <> ".jsonl"
 
   io.println("LLM:       " <> openai_model() <> " @ " <> openai_base_url())
+  io.println("DB:        " <> dir)
   io.println("Workspace: " <> workspace_path)
-  io.println("Session:   " <> session_path)
+  io.println("Obs:       " <> yard_session_path)
   io.println("Task:      " <> task)
   io.println("")
 
@@ -136,41 +104,70 @@ pub fn main() {
   let assert Ok(yard_terminal) = terminal.start()
   process.send(yard_dispatcher, dispatcher.RegisterConsumer(yard_terminal))
 
-  let assert Ok(yard_session) = session.start_consumer(session_path)
-  process.send(yard_dispatcher, dispatcher.RegisterConsumer(yard_session))
+  let assert Ok(yard_sess) = yard_session.start_consumer(yard_session_path)
+  process.send(yard_dispatcher, dispatcher.RegisterConsumer(yard_sess))
 
   io.println("Yard observability started")
+
+  // ── 3. Database setup ───────────────────────────────────────
+  let global_path = dir <> "/hermes_global.db"
+  let assert Ok(global_conn) = db.open(global_path)
+  let assert Ok(Nil) = db.migrate(global_conn)
+
+  let assert Ok(ws) = workspace.open(workspace_path)
+  let workspace_conn = workspace.connection(ws)
+
+  // ── 4. Build session config with chute_exec tool ─────────────
+  let provider =
+    openai.provider_with_base_url(
+      openai_api_key(),
+      openai_model(),
+      openai_base_url(),
+    )
+
+  let chute_cfg =
+    chute_exec.config(
+      workspace_conn,
+      runner.emit_to_dispatcher(yard_dispatcher),
+    )
+  let chute_tool = chute_exec.tool(chute_cfg)
+
+  let sess_config =
+    session.SessionConfig(
+      provider: provider.call,
+      system_prompt: prompt.system_prompt(),
+      tools: [chute_tool],
+      agent_name: "hermes-agent",
+      history_limit: 20,
+      run_timeout_ms: 300_000,
+    )
+
+  // ── 5. Load session ────────────────────────────────────────
+  // CLI user_key is "cli:local" — shared across CLI runs.
+  // Conversation history persists in chat_messages.
+  io.println("Starting session...")
+  let assert Ok(sess) =
+    session.load(sess_config, global_conn, workspace_conn, "cli:local")
+  io.println("Session: " <> sess.session_id)
   io.println("")
 
-  // ── 3. Build & start agent ──────────────────────────────────
-  let cfg = build_config(workspace_path, yard_dispatcher)
-
-  io.println("Starting agent...")
-  let assert Ok(agent) = pig.start(cfg)
-  io.println("Agent started.")
-  io.println("")
-
-  // ── 4. Run task ─────────────────────────────────────────────
-  case pig.run_with_timeout(agent, task, 120_000) {
-    Ok(message.Assistant(content:, ..)) -> {
+  // ── 6. Run task ─────────────────────────────────────────────
+  case session.run_prompt(sess, task) {
+    Ok(response) -> {
       io.println("Agent response:")
-      io.println(content)
+      io.println(response)
     }
-    Ok(_) -> io.println("[unexpected response type]")
-    Error(error.Timeout) -> io.println("[timeout — agent took too long]")
-    Error(error.RateLimited) -> io.println("[rate limited — slow down]")
-    Error(error.ApiError(msg)) -> io.println("[API error: " <> msg <> "]")
-    Error(error.InvalidResponse(detail)) ->
-      io.println("[invalid response: " <> detail <> "]")
+    Error(_) -> io.println("[error running agent]")
   }
 
-  // ── 5. Shutdown ─────────────────────────────────────────────
-  // Stop the agent first, then give Yard a moment to flush
-  // any pending observability events before stopping the dispatcher.
-  pig.stop(agent)
+  // ── 7. Shutdown ─────────────────────────────────────────────
+  // Stop the session, give Yard a moment to flush pending events,
+  // then stop the dispatcher.
+  session.stop(sess)
   process.sleep(200)
   process.send(yard_dispatcher, dispatcher.Stop)
   io.println("")
-  io.println("Session written to: " <> session_path)
+  io.println("Observability: " <> yard_session_path)
+  io.println("Messages:      " <> global_path)
   io.println("Done.")
 }

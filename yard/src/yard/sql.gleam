@@ -638,6 +638,45 @@ pub fn get_active_session_decoder() -> decode.Decoder(GetActiveSession) {
   decode.success(GetActiveSession(id:))
 }
 
+pub type GetSessionByUserKey {
+  GetSessionByUserKey(id: String)
+}
+
+pub fn get_session_by_user_key(user_key user_key: Option(String)) {
+  let sql =
+    "SELECT id
+FROM chat_sessions
+WHERE user_key = ? AND status = 'active'
+LIMIT 1"
+  #(
+    sql,
+    [dev.ParamNullable(option.map(user_key, fn(v) { dev.ParamString(v) }))],
+    get_session_by_user_key_decoder(),
+  )
+}
+
+pub fn get_session_by_user_key_decoder() -> decode.Decoder(GetSessionByUserKey) {
+  use id <- decode.field(0, decode.string)
+  decode.success(GetSessionByUserKey(id:))
+}
+
+pub fn create_session_with_user_key(
+  id id: String,
+  user_key user_key: Option(String),
+  created_at created_at: Int,
+  updated_at updated_at: Int,
+) {
+  let sql =
+    "INSERT INTO chat_sessions (id, user_key, status, created_at, updated_at)
+VALUES (?, ?, 'active', ?, ?)"
+  #(sql, [
+    dev.ParamString(id),
+    dev.ParamNullable(option.map(user_key, fn(v) { dev.ParamString(v) })),
+    dev.ParamInt(created_at),
+    dev.ParamInt(updated_at),
+  ])
+}
+
 pub fn create_session(
   id id: String,
   created_at created_at: Int,
@@ -651,6 +690,13 @@ VALUES (?, 'active', ?, ?)"
     dev.ParamInt(created_at),
     dev.ParamInt(updated_at),
   ])
+}
+
+pub fn complete_session(updated_at updated_at: Int, id id: String) {
+  let sql =
+    "UPDATE chat_sessions SET status = 'completed', updated_at = ?
+WHERE id = ?"
+  #(sql, [dev.ParamInt(updated_at), dev.ParamString(id)])
 }
 
 pub fn save_chat_message(
@@ -691,4 +737,30 @@ pub fn get_chat_messages_decoder() -> decode.Decoder(GetChatMessages) {
   use role <- decode.field(2, decode.string)
   use created_at <- decode.field(3, decode.int)
   decode.success(GetChatMessages(id:, content:, role:, created_at:))
+}
+
+pub type GetRecentMessages {
+  GetRecentMessages(id: String, content: String, role: String, created_at: Int)
+}
+
+pub fn get_recent_messages(session_id session_id: String, limit limit: Int) {
+  let sql =
+    "SELECT id, content, role, created_at
+FROM chat_messages
+WHERE session_id = ?
+ORDER BY rowid DESC
+LIMIT ?"
+  #(
+    sql,
+    [dev.ParamString(session_id), dev.ParamInt(limit)],
+    get_recent_messages_decoder(),
+  )
+}
+
+pub fn get_recent_messages_decoder() -> decode.Decoder(GetRecentMessages) {
+  use id <- decode.field(0, decode.string)
+  use content <- decode.field(1, decode.string)
+  use role <- decode.field(2, decode.string)
+  use created_at <- decode.field(3, decode.int)
+  decode.success(GetRecentMessages(id:, content:, role:, created_at:))
 }

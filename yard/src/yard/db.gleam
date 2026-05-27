@@ -210,6 +210,7 @@ pub fn migrate(conn: sqlight.Connection) -> Result(Nil, sqlight.Error) {
 
     CREATE TABLE IF NOT EXISTS chat_sessions (
       id TEXT PRIMARY KEY,
+      user_key TEXT,
       provider_id TEXT REFERENCES providers(id),
       status TEXT NOT NULL DEFAULT 'active',
       created_at INTEGER NOT NULL,
@@ -234,9 +235,9 @@ fn new_id() -> String {
   gluid.guidv4() |> string.lowercase()
 }
 
-/// Current unix timestamp.
+/// Current unix timestamp in milliseconds.
 fn now_ts() -> Int {
-  birl.to_unix(birl.utc_now())
+  birl.to_unix_milli(birl.utc_now())
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -572,7 +573,7 @@ pub fn insert_skill(
 ) -> Result(String, Nil) {
   let id = new_id()
   let now = now_ts()
-  let hash = actor_hash(chute_source)
+  let _hash = actor_hash(chute_source)
   let #(sql_str, params) =
     sql.insert_skill(
       id: id,
@@ -930,6 +931,95 @@ pub fn complete_run(
 // ═══════════════════════════════════════════════════════════════
 // Chat Queries
 // ═══════════════════════════════════════════════════════════════
+
+/// Get or create the active chat session for a specific user.
+/// Uses user_key to isolate sessions per user (e.g. "telegram:123456").
+pub fn get_or_create_session_for_user(
+  conn: sqlight.Connection,
+  user_key: String,
+) -> Result(String, Nil) {
+  let #(sql_str, params, decoder) =
+    sql.get_session_by_user_key(option.Some(user_key))
+  let existing =
+    sqlight.query(
+      sql_str,
+      on: conn,
+      with: params_to_values(params),
+      expecting: decoder,
+    )
+    |> result.map(fn(rows) { list.map(rows, fn(r) { r.id }) })
+    |> result.unwrap([])
+
+  case existing {
+    [session_id] -> Ok(session_id)
+    _ -> {
+      let id = new_id()
+      let now = now_ts()
+      let #(ins_sql, ins_params) =
+        sql.create_session_with_user_key(
+          id:,
+          user_key: option.Some(user_key),
+          created_at: now,
+          updated_at: now,
+        )
+      sqlight.query(
+        ins_sql,
+        on: conn,
+        with: params_to_values(ins_params),
+        expecting: dyn_decode.success(Nil),
+      )
+      |> result.map(fn(_) { id })
+      |> result.replace_error(Nil)
+    }
+  }
+}
+
+/// Mark a chat session as completed.
+pub fn complete_session(
+  conn: sqlight.Connection,
+  session_id: String,
+) -> Result(Nil, Nil) {
+  let now = now_ts()
+  let #(sql_str, params) = sql.complete_session(updated_at: now, id: session_id)
+  sqlight.query(
+    sql_str,
+    on: conn,
+    with: params_to_values(params),
+    expecting: dyn_decode.success(Nil),
+  )
+  |> result.map(fn(_) { Nil })
+  |> result.replace_error(Nil)
+}
+
+/// Get the most recent N messages for a session.
+/// Returns messages in chronological order (oldest first),
+/// useful for seeding Pig agent history via with_initial_history().
+pub fn get_recent_messages(
+  conn: sqlight.Connection,
+  session_id: String,
+  limit: Int,
+) -> Result(List(ChatMessage), Nil) {
+  let #(sql_str, params, decoder) = sql.get_recent_messages(session_id:, limit:)
+  sqlight.query(
+    sql_str,
+    on: conn,
+    with: params_to_values(params),
+    expecting: decoder,
+  )
+  |> result.map(fn(rows) {
+    // Query returns DESC order, reverse to get chronological ASC
+    let rows = list.reverse(rows)
+    list.map(rows, fn(row) {
+      ChatMessage(
+        id: row.id,
+        content: row.content,
+        role: row.role,
+        created_at: row.created_at,
+      )
+    })
+  })
+  |> result.replace_error(Nil)
+}
 
 /// Get or create the active chat session.
 pub fn get_or_create_session(conn: sqlight.Connection) -> Result(String, Nil) {

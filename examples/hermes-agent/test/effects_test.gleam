@@ -210,7 +210,7 @@ pub fn store_handler_invalid_args_test() {
 // ═══════════════════════════════════════════════════════════════
 
 pub fn register_skill_handler_test() {
-  with_both_dbs(fn(workspace_conn, global_conn) {
+  with_both_dbs(fn(_workspace_conn, global_conn) {
     let handler = effects.register_skill_handler(global_conn)
     let result =
       handler("register_skill", [
@@ -224,7 +224,7 @@ pub fn register_skill_handler_test() {
 }
 
 pub fn get_skill_handler_test() {
-  with_both_dbs(fn(workspace_conn, global_conn) {
+  with_both_dbs(fn(_workspace_conn, global_conn) {
     let reg = effects.register_skill_handler(global_conn)
     let get = effects.get_skill_handler(global_conn)
     let _ =
@@ -240,7 +240,7 @@ pub fn get_skill_handler_test() {
 }
 
 pub fn list_skills_handler_test() {
-  with_both_dbs(fn(workspace_conn, global_conn) {
+  with_both_dbs(fn(_workspace_conn, global_conn) {
     let reg = effects.register_skill_handler(global_conn)
     let ls = effects.list_skills_handler(global_conn)
     let _ =
@@ -262,7 +262,7 @@ pub fn list_skills_handler_test() {
 }
 
 pub fn register_skill_bad_args_test() {
-  with_both_dbs(fn(workspace_conn, global_conn) {
+  with_both_dbs(fn(_workspace_conn, global_conn) {
     let handler = effects.register_skill_handler(global_conn)
     let result = handler("register_skill", [StringVal("only_one")])
     let assert Ok(ErrorVal(StringVal(msg))) = result
@@ -323,7 +323,7 @@ pub fn register_agent_handler_test() {
 // ═══════════════════════════════════════════════════════════════
 
 pub fn tell_user_handler_test() {
-  with_workspace(fn(conn) {
+  with_workspace(fn(_conn) {
     let collector = effects.new_event_collector()
     let handler = effects.tell_user_handler(collector)
     let result = handler("tell_user", [StringVal("Working on it...")])

@@ -17,7 +17,6 @@
 import gleam/dict
 import gleam/list
 import gleam/option
-import gleam/result
 import logging
 import sqlight
 import yard/db

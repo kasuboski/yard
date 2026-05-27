@@ -113,6 +113,16 @@ for dir in examples/*/; do
 done
 """
 
+# ── Hermes Gateway ────────────────────────────────────────────────────
+
+[tasks."hermes:run"]
+description = "Run the Hermes CLI agent demo"
+run = "cd examples/hermes-agent && gleam run"
+
+[tasks."hermes:gateway"]
+description = "Start the Hermes Telegram gateway (requires TELEGRAM_BOT_TOKEN)"
+run = "cd examples/hermes-agent && gleam run -m hermes_agent/main"
+
 # ── Top-level aliases ────────────────────────────────────────────────────
 
 [tasks.check]

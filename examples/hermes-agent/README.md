@@ -2,6 +2,8 @@
 
 A long-lived autonomous agent on the BEAM that accomplishes tasks by **writing and executing programs** rather than calling APIs directly. Built on [Pig](https://github.com/kasuboski/pig) (agent runtime), [Yard](../../yard/) (host runtime + observability), [Chute](../../chute/) (language), and [Ballast](../../ballast/) (sandboxed evaluator).
 
+Available as both a **CLI tool** and a **Telegram bot** — both use the same session machinery for conversation history, workspace persistence, and agent lifecycle.
+
 ```
 LLM (OpenAI-compatible)
   │
@@ -23,18 +25,98 @@ LLM (OpenAI-compatible)
   └─ response: {"ok": <result>, "gas_used": 42, "events": [...]}
 ```
 
+## Running
+
+### CLI Demo
+
+Single-shot agent with Yard observability, chute_exec tool, and session persistence:
+
+```bash
+# Start Ollama (or any OpenAI-compatible API)
+ollama serve
+
+# Run the agent
+mise run hermes:run
+# or: cd examples/hermes-agent && gleam run
+```
+
+### Telegram Bot
+
+Long-running multi-user bot with per-user sessions and conversation history:
+
+```bash
+# Get a token from @BotFather on Telegram
+export TELEGRAM_BOT_TOKEN="your-bot-token"
+
+# Start the gateway
+mise run hermes:gateway
+# or: cd examples/hermes-agent && gleam run -m hermes_agent/main
+```
+
+Bot commands:
+- Send any text — the agent responds
+- `/new` or `/reset` — start a fresh session (workspace persists)
+
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `TELEGRAM_BOT_TOKEN` | (required for gateway) | Bot token from @BotFather |
+| `OPENAI_COMPAT_BASE_URL` | `http://localhost:11434/v1` | LLM API endpoint |
+| `OPENAI_COMPAT_API_KEY` | `ollama` | API key |
+| `OPENAI_COMPAT_MODEL` | `llama3` | Model name |
+| `HERMES_DB_DIR` | `/tmp/hermes` | Directory for database files |
+
 ## How It Works
+
+### Two Entry Points, One Session Module
+
+Both the CLI and Telegram gateway share `session.gleam` for agent lifecycle:
+
+```
+CLI (hermes_agent.gleam)
+  └─ Yard observability (dispatcher + terminal + JSONL)
+  └─ SessionConfig(tools=[chute_exec], system_prompt=prompt.system_prompt())
+  └─ session.load() → HermesSession
+  └─ session.run_prompt(task) → saves messages to DB
+
+Telegram (hermes_agent/main.gleam + gateway.gleam)
+  └─ Yard observability (dispatcher + terminal + JSONL)
+  └─ SessionConfig(tools=[chute_exec], system_prompt=prompt.system_prompt())
+  └─ gateway.session_settings() → session.load() per user
+  └─ handle_text → session.run_prompt(text) → saves messages to DB
+```
+
+### SessionConfig
+
+Each entry point configures its agent via `SessionConfig`:
+
+```gleam
+SessionConfig(
+  provider: Provider,           // LLM provider function
+  system_prompt: String,        // Agent system prompt
+  tools: List(ToolDefinition),  // Registered tools (chute_exec, etc.)
+  agent_name: String,           // Agent identifier
+  history_limit: Int,           // Max messages to seed from DB
+)
+```
+
+- **CLI** uses: `tools=[chute_exec]`, full hermes system prompt, Yard observability
+- **Gateway** uses: `tools=[chute_exec]`, full hermes system prompt, Yard observability
+
+Both entry points are feature-identical. The only difference is input source (CLI text vs Telegram message) and multi-user session isolation in the gateway.
 
 ### The Agent Loop
 
 Hermes is a **Pig agent** — an OTP actor holding conversation history. Each turn:
 
-1. The user sends a message via `pig.run(agent, prompt)`
+1. The user sends a message via `session.run_prompt(session, prompt)`
 2. The LLM (via OpenAI-compatible provider) decides what to do
 3. If it calls `chute_exec`, the LLM-written Chute program runs in Ballast's sandbox
 4. The result (JSON + events + gas) feeds back to the LLM
 5. The LLM responds to the user or makes another tool call
-6. History, workspace (VFS + KV), and agent state all persist across turns
+6. Messages are saved to the `chat_messages` table in the global DB
+7. History, workspace (VFS + KV), and agent state all persist across turns
 
 The LLM never performs I/O directly. It **writes programs** that perform I/O through algebraic effects. This is the core idea: the agent's "cognitive instructions" are executable code, not natural language wishes.
 
@@ -58,7 +140,8 @@ The LLM generates Chute source as a string inside a tool call. The host compiles
 │                                     │
 │  agents, agent_handlers             │
 │  skills, schedules, runs            │
-│  providers, chat_sessions, messages │
+│  providers, chat_sessions,          │
+│  chat_messages                      │
 │                                     │
 │  Schema managed by Parrot (sqlc)    │
 └─────────────────────────────────────┘
@@ -74,8 +157,45 @@ The LLM generates Chute source as a string inside a tool call. The host compiles
 └─────────────────────────────────────┘
 ```
 
-- **Global DB** — agent registry, skill definitions, cron schedules, run history, providers, chat. Schema is codegen'd from SQL via Parrot. Shared across all agents.
+- **Global DB** — agent registry, skill definitions, cron schedules, run history, providers, chat sessions, chat messages. Schema is codegen'd from SQL via Parrot. Shared across all agents and users.
 - **Workspace DB** — each agent gets its own SQLite file with a virtual filesystem (VFS) and key-value store (KV). State persists across turns. Files written in turn 1 are readable in turn 2.
+
+### Session Lifecycle
+
+The session module (`session.gleam`) manages the Pig agent lifecycle:
+
+```
+create(config, global_conn, workspace_conn, user_key)
+  └─ New session in DB + fresh Pig agent
+
+load(config, global_conn, workspace_conn, user_key)
+  └─ Get/create DB session + load recent messages as history
+  └─ Uses pig.with_initial_history() to seed the agent
+
+run_prompt(session, prompt)
+  └─ pig.run_with_timeout(agent, prompt, 30s)
+  └─ Save user + assistant messages to chat_messages table
+
+reset(config, session)
+  └─ Stop agent, complete DB session, create fresh agent + session
+  └─ Workspace (VFS + KV) persists across resets
+
+stop(session)
+  └─ Graceful Pig agent shutdown
+```
+
+### Telegram Session Key Flow
+
+The gateway extracts user identity from each Telegram update:
+
+1. telega builds key = `"{chat_id}:{from_id}"` from each update
+2. `get_session(key)` → `user_key_from_key()` → `"telegram:{from_id}"`
+3. Calls `session.load()` with the user key
+4. If no existing session → `default_session()` creates with "pending" key
+5. `handle_text` detects "pending" → extracts real user_key from update → creates proper session
+6. Messages persist in global DB keyed by user
+
+This means each Telegram user gets their own isolated session and conversation history. Group chats work too — telega keys by `{chat_id}:{from_id}`, so each user in a group gets their own agent.
 
 ## The 5 Pillars
 
@@ -161,41 +281,11 @@ db.insert_agent_handler(conn, agent_id: "issue-triage", effect_name: "run_agent"
 
 This is the same pattern [`examples/issue-triage`](../issue-triage/) uses, but generalized through a registry instead of hardcoded handlers.
 
-## Running
-
-```bash
-# Start Ollama (or any OpenAI-compatible API)
-ollama serve
-
-# Set environment (defaults to Ollama localhost)
-export OPENAI_COMPAT_BASE_URL=http://localhost:11434/v1
-export OPENAI_COMPAT_MODEL=llama3
-
-# Run the agent
-cd examples/hermes-agent
-gleam run
-```
-
-The agent will:
-1. Start the Yard observability stack (terminal + JSONL session logging)
-2. Open a workspace at `/tmp/hermes_workspace.db` (delete to start fresh)
-3. Start the Pig agent with `chute_exec` as its tool
-4. Send the task defined in `src/hermes_agent.gleam`
-5. Print the response and write session to `/tmp/hermes_session_*.jsonl`
-
-### Environment Variables
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `OPENAI_COMPAT_BASE_URL` | `http://localhost:11434/v1` | LLM API endpoint |
-| `OPENAI_COMPAT_API_KEY` | `ollama` | API key |
-| `OPENAI_COMPAT_MODEL` | `llama3` | Model name |
-
 ## Testing
 
 ```bash
 cd examples/hermes-agent
-gleam test            # 71 tests
+gleam test            # 85 tests
 ```
 
 Tests use fake providers (canned LLM responses) and in-memory SQLite databases. No external services needed.
@@ -206,6 +296,8 @@ Tests use fake providers (canned LLM responses) and in-memory SQLite databases. 
 | `effects_test.gleam` | 31 | All 16 handlers + collector + handler registry counts |
 | `conversation_test.gleam` | 6 | Multi-turn loop: history, VFS, KV, error recovery |
 | `run_tracking_test.gleam` | 5 | Run recording in global DB |
+| `session_test.gleam` | 8 | Session create/reset/load/run_prompt lifecycle |
+| `gateway_test.gleam` | 6 | Telegram handler wiring + session persistence + user_key extraction |
 | `value_bridge_test.gleam` | 22 | Ballast Value ↔ JSON conversion |
 
 ### The Multi-Turn Proof
@@ -217,17 +309,36 @@ Turn 1: chute_exec writes "data.txt" → "secret value"
 Turn 2: chute_exec reads "data.txt"  → "secret value" ✅ persists
 ```
 
+### Session Persistence Tests
+
+The gateway tests prove session persistence across restarts:
+
+1. Pre-create a session with messages → stop the agent
+2. Telega calls `get_session` → loads from DB with history
+3. New messages appended to the same session
+4. Total: 4 messages in DB (2 from before + 2 after restart)
+
+And first-message-for-new-user:
+
+1. No existing session in DB
+2. `get_session` returns None → `default_session` creates "pending"
+3. `handle_text` detects "pending" → creates proper session with real user_key
+4. Messages saved to DB with correct user identity
+
 ## Architecture Layers
 
 ```
 ┌────────────────────────────────────────────────────┐
 │  Hermes Agent (this example)                       │
 │                                                    │
-│  hermes_agent.gleam        — wiring & main loop    │
-│  chute_exec.gleam          — pig tool → yard runner │
-│  effects.gleam             — 16 effect handlers     │
-│  prompt.gleam              — system prompt          │
-│  value_bridge.gleam        — ballast ↔ JSON bridge  │
+│  hermes_agent.gleam        — CLI entry point        │
+│  hermes_agent/main.gleam   — Telegram gateway entry │
+│  gateway.gleam             — telega session/router  │
+│  session.gleam             — SessionConfig + lifecycle│
+│  chute_exec.gleam          — pig tool → yard runner  │
+│  effects.gleam             — 16 effect handlers      │
+│  prompt.gleam              — system prompt            │
+│  value_bridge.gleam        — ballast ↔ JSON bridge    │
 ├────────────────────────────────────────────────────┤
 │  Yard (host runtime)                               │
 │                                                    │
@@ -249,6 +360,11 @@ Turn 2: chute_exec reads "data.txt"  → "secret value" ✅ persists
 │                                                    │
 │  parser → desugar → ballast evaluator               │
 │  algebraic effects, gas metering, sandboxed         │
+├────────────────────────────────────────────────────┤
+│  Telega (Telegram Bot)                             │
+│                                                    │
+│  Polling, ChatInstance actors, session management   │
+│  telega_httpc adapter for HTTP                      │
 └────────────────────────────────────────────────────┘
 ```
 
@@ -259,6 +375,7 @@ Turn 2: chute_exec reads "data.txt"  → "secret value" ✅ persists
 | **Runner** | `yard/runner` | Execute Chute programs with effect handlers and gas limits |
 | **Loader** | `yard/loader` | Compile Chute source → Ballast AST with actor hash |
 | **Global DB** | `yard/db` | 9 tables: agents, skills, schedules, runs, providers, chat |
+| **Chat DB** | `yard/db` | Per-user sessions, message persistence, history loading |
 | **Skill Repo** | `yard/skill_repo` | Register, lookup, list, deactivate skills |
 | **Cron Engine** | `yard/cron_engine` | OTP actor: schedule, tick, fire, reschedule |
 | **Handler Registry** | `yard/handler_registry` | Resolve per-agent handler bindings from DB |
@@ -267,25 +384,37 @@ Turn 2: chute_exec reads "data.txt"  → "secret value" ✅ persists
 
 ## Future Work
 
-### Telegram Chat Integration
+### Handler Context Enrichment
 
-The next natural step is connecting Hermes to Telegram for real-world social chat:
+The `tell_user` effect currently emits to a collector. For the Telegram gateway, it should send actual messages:
 
 ```
-User → Telegram Bot API → Webhook/Polling
-  → Hermes Agent (pig.run)
-  → LLM decides: respond directly? Run chute_exec?
-  → chute_exec runs with effects
-  → Response → Telegram Bot API → User
+chute_exec → tell_user("Your task is done!")
+  → handler context enrichment
+  → telega api.send_message(chat_id, text)
 ```
 
-This requires:
-1. A Telegram bot adapter (polling or webhook) that translates messages to `pig.run()` calls
-2. Session management (map Telegram chat ID → Pig agent + workspace)
-3. Streaming responses (Telegram supports editing messages for progressive output)
-4. The `tell_user` effect could push proactive messages to the Telegram chat
+This requires the handler context to carry a reference to the telega chat.
 
-The multi-turn conversation tests already prove this works — just swap the fake provider for a real LLM and the test assertions for Telegram API calls.
+### Typing Indicators
+
+Send `send_chat_action(Typing)` before `pig.run()` so the user sees the bot is thinking:
+
+```gleam
+// In handle_text, before session.run_prompt:
+let _ = api.send_chat_action(ctx.config, SendChatActionParameters(
+  chat_id: ctx.update.chat_id,
+  action: Typing,
+))
+```
+
+### Real Handler Builders
+
+The handler registry is wired but uses generic handlers. Real-world handlers:
+
+- `github_fetch` — fetch issues, PRs, comments from GitHub API
+- `run_agent` — spawn a specialist agent and return its output
+- `http_get` — generic HTTP client with safety constraints
 
 ### Specialist Agents
 
@@ -328,3 +457,17 @@ fn start_timer(engine) {
 ```
 
 Or use a BEAM timer via `gleam/erlang/process` for non-blocking periodic ticks.
+
+### Per-User Workspace DBs
+
+Currently all gateway users share one workspace DB. Per-user isolation:
+
+```gleam
+// In gateway session factory:
+let workspace_path = dir <> "/workspace_" <> user_key <> ".db"
+let assert Ok(ws) = workspace.open(workspace_path)
+```
+
+### Idle Timeout Eviction
+
+Telega ChatInstances live as long as the supervision tree. Add idle timeout to free BEAM processes for inactive users.

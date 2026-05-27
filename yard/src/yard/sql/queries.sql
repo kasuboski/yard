@@ -137,9 +137,23 @@ WHERE status = 'active'
 ORDER BY created_at DESC
 LIMIT 1;
 
+-- name: GetSessionByUserKey :one
+SELECT id
+FROM chat_sessions
+WHERE user_key = ? AND status = 'active'
+LIMIT 1;
+
+-- name: CreateSessionWithUserKey :exec
+INSERT INTO chat_sessions (id, user_key, status, created_at, updated_at)
+VALUES (?, ?, 'active', ?, ?);
+
 -- name: CreateSession :exec
 INSERT INTO chat_sessions (id, status, created_at, updated_at)
 VALUES (?, 'active', ?, ?);
+
+-- name: CompleteSession :exec
+UPDATE chat_sessions SET status = 'completed', updated_at = ?
+WHERE id = ?;
 
 -- name: SaveChatMessage :exec
 INSERT INTO chat_messages (id, session_id, role, content, created_at)
@@ -150,3 +164,10 @@ SELECT id, content, role, created_at
 FROM chat_messages
 WHERE session_id = ?
 ORDER BY created_at ASC;
+
+-- name: GetRecentMessages :many
+SELECT id, content, role, created_at
+FROM chat_messages
+WHERE session_id = ?
+ORDER BY rowid DESC
+LIMIT ?;
