@@ -11,6 +11,7 @@
 ////   load()    — find active session, recreate agent with history from DB
 ////   stop()    — stop the Pig agent
 
+import gleam/io
 import gleam/list
 import gleam/option
 import gleam/otp/actor.{type StartError}
@@ -123,21 +124,38 @@ pub fn run_prompt(
   case pig.try_run_with_timeout(session.agent, prompt, session.run_timeout_ms) {
     Ok(Ok(response)) -> {
       let content = message_content(response)
-      // Save both messages to global DB
-      let _ =
+      // Save both messages to global DB. Log but don't fail on error —
+      // the LLM response is still valid even if persistence fails.
+      case
         db.save_chat_message(
           session.global_conn,
           session.session_id,
           "user",
           prompt,
         )
-      let _ =
+      {
+        Ok(_) -> Nil
+        Error(_) ->
+          io.println(
+            "[warn] Failed to save user message to session "
+            <> session.session_id,
+          )
+      }
+      case
         db.save_chat_message(
           session.global_conn,
           session.session_id,
           "assistant",
           content,
         )
+      {
+        Ok(_) -> Nil
+        Error(_) ->
+          io.println(
+            "[warn] Failed to save assistant message to session "
+            <> session.session_id,
+          )
+      }
       Ok(content)
     }
     _ -> Error(Nil)
@@ -176,8 +194,16 @@ pub fn reset(
     Error(e) -> {
       // Create failed. Old agent is still alive — restart the completed
       // DB session so the old agent can keep working.
-      let _ =
+      case
         db.get_or_create_session_for_user(session.global_conn, session.user_key)
+      {
+        Ok(_) -> Nil
+        Error(_) ->
+          io.println(
+            "[error] session.reset: both new session creation and fallback failed for user: "
+            <> session.user_key,
+          )
+      }
       Error(e)
     }
   }

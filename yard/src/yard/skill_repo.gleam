@@ -3,9 +3,9 @@
 //// Provides register/lookup/list/deactivate operations for skills.
 //// Skills are reusable Chute programs stored in the global DB.
 
+import gleam/json
 import gleam/list
 import gleam/option
-import gleam/string
 import sqlight
 import yard/db
 
@@ -60,9 +60,9 @@ pub fn register(
     Ok(option.None) -> {
       let tags_json =
         tags
-        |> list.map(fn(t) { "\"" <> t <> "\"" })
-        |> string.join(",")
-        |> fn(s) { "[" <> s <> "]" }()
+        |> list.map(json.string)
+        |> json.array(fn(x) { x })
+        |> json.to_string
 
       case db.insert_skill(conn, name, description, source, tags_json) {
         Ok(id) -> Ok(id)

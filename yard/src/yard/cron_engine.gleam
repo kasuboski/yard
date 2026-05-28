@@ -19,7 +19,6 @@ import ballast/value
 import birl
 import gleam/dict
 import gleam/erlang/process
-import gleam/int
 import gleam/list
 import gleam/option
 import gleam/otp/actor
@@ -28,6 +27,7 @@ import gleam/string
 import gluid
 import logging
 import sqlight
+import yard/cron_time
 import yard/db
 import yard/handler_registry
 import yard/loader
@@ -169,11 +169,11 @@ fn handle_register(
     |> result.try(fn(spec) {
       // Compute next fire time
       let now = birl.utc_now()
-      let vdt = birl_to_valid_datetime(now)
+      let vdt = cron_time.birl_to_valid_datetime(now)
       let next_fire = case cron.next_after(spec, after: vdt) {
         option.Some(next_vdt) -> {
           let dt = schedule_ast.valid_datetime_value(next_vdt)
-          datetime_to_unix(dt)
+          cron_time.datetime_to_unix(dt)
         }
         option.None ->
           // Fallback: 1 hour from now
@@ -353,13 +353,23 @@ fn reschedule(state: EngineState, schedule: db.Schedule) -> Result(Nil, Nil) {
   case parse_and_validate(schedule.cron_expr) {
     Ok(spec) -> {
       let now = birl.utc_now()
-      let vdt = birl_to_valid_datetime(now)
+      let vdt = cron_time.birl_to_valid_datetime(now)
       let next_fire = case cron.next_after(spec, after: vdt) {
         option.Some(next_vdt) -> {
           let dt = schedule_ast.valid_datetime_value(next_vdt)
-          datetime_to_unix(dt)
+          cron_time.datetime_to_unix(dt)
         }
-        option.None -> birl.to_unix(now) + 3600
+        option.None -> {
+          logging.log(
+            logging.Warning,
+            "cron_engine: schedule '"
+              <> schedule.id
+              <> "' cron '"
+              <> schedule.cron_expr
+              <> "' has no next fire time, using +1h fallback",
+          )
+          birl.to_unix(now) + 3600
+        }
       }
       let now_ts = birl.to_unix(now)
       db.update_schedule_fire(
@@ -372,56 +382,6 @@ fn reschedule(state: EngineState, schedule: db.Schedule) -> Result(Nil, Nil) {
     Error(_) -> Error(Nil)
   }
 }
-
 // ═══════════════════════════════════════════════════════════════
 // Time conversion helpers
 // ═══════════════════════════════════════════════════════════════
-
-/// Convert a birl Time to automata ValidDateTime.
-fn birl_to_valid_datetime(t: birl.Time) -> schedule_ast.ValidDateTime {
-  let birl.Day(year: y, month: m, date: d) = birl.get_day(t)
-  let birl.TimeOfDay(hour: h, minute: min, second: s, ..) =
-    birl.get_time_of_day(t)
-  let assert Ok(vdt) =
-    schedule_ast.try_valid_datetime(
-      year: y,
-      month: m,
-      day: d,
-      hour: h,
-      minute: min,
-      second: s,
-    )
-  vdt
-}
-
-/// Convert an automata DateTime to a unix timestamp.
-fn datetime_to_unix(dt: schedule_ast.DateTime) -> Int {
-  let schedule_ast.DateTime(
-    date: schedule_ast.Date(year: y, month: m, day: d),
-    time: schedule_ast.Time(hour: h, minute: min, second: s),
-  ) = dt
-  // birl.from_naive expects time without Z suffix
-  let birl_str =
-    pad2(y)
-    <> "-"
-    <> pad2(m)
-    <> "-"
-    <> pad2(d)
-    <> "T"
-    <> pad2(h)
-    <> ":"
-    <> pad2(min)
-    <> ":"
-    <> pad2(s)
-  case birl.from_naive(birl_str) {
-    Ok(t) -> birl.to_unix(t)
-    Error(_) -> 0
-  }
-}
-
-fn pad2(n: Int) -> String {
-  case n < 10 {
-    True -> "0" <> int.to_string(n)
-    False -> int.to_string(n)
-  }
-}

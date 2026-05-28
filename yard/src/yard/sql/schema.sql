@@ -9,7 +9,7 @@
 -- in pig/workspace, one SQLite DB per agent).
 --
 -- Regenerate after changes:
---   cd yard && gleam run -m parrot -- --sqlite /tmp/yard_schema.db
+--   mise run yard:gen
 
 -- -- LLM Providers ---------------------------------------------
 

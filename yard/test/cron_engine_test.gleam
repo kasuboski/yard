@@ -18,7 +18,6 @@ import automata/schedule/ast as schedule_ast
 import ballast/value
 import birl
 import gleam/erlang/process
-import gleam/int
 import gleam/list
 import gleam/option
 import gleam/result
@@ -26,6 +25,7 @@ import gleam/string
 import gleeunit
 import sqlight
 import yard/cron_engine
+import yard/cron_time
 import yard/db
 import yard/handler_registry
 import yard/skill_repo
@@ -50,55 +50,6 @@ fn create_skill(conn: sqlight.Connection, name: String) -> String {
   let assert Ok(id) =
     skill_repo.register(conn, name, "A test skill", source, [])
   id
-}
-
-/// Convert a birl Time to automata ValidDateTime.
-fn birl_to_valid_datetime(t: birl.Time) -> schedule_ast.ValidDateTime {
-  let birl.Day(year: y, month: m, date: d) = birl.get_day(t)
-  let birl.TimeOfDay(hour: h, minute: min, second: s, ..) =
-    birl.get_time_of_day(t)
-  let assert Ok(vdt) =
-    schedule_ast.try_valid_datetime(
-      year: y,
-      month: m,
-      day: d,
-      hour: h,
-      minute: min,
-      second: s,
-    )
-  vdt
-}
-
-/// Convert an automata DateTime to a unix timestamp.
-fn datetime_to_unix(dt: schedule_ast.DateTime) -> Int {
-  let schedule_ast.DateTime(
-    date: schedule_ast.Date(year: y, month: m, day: d),
-    time: schedule_ast.Time(hour: h, minute: min, second: s),
-  ) = dt
-  // birl.from_naive expects time without Z suffix
-  let birl_time =
-    birl.from_naive(
-      int.to_string(y)
-      <> "-"
-      <> string_pad2(m)
-      <> "-"
-      <> string_pad2(d)
-      <> "T"
-      <> string_pad2(h)
-      <> ":"
-      <> string_pad2(min)
-      <> ":"
-      <> string_pad2(s),
-    )
-  let assert Ok(t) = birl_time
-  birl.to_unix(t)
-}
-
-fn string_pad2(n: Int) -> String {
-  case n < 10 {
-    True -> "0" <> int.to_string(n)
-    False -> int.to_string(n)
-  }
 }
 
 /// Helper to get a unix timestamp that's safely in the past.
@@ -420,11 +371,11 @@ pub fn parse_invalid_cron_expression_test() {
 pub fn compute_next_fire_time_test() {
   let assert Ok(plan) = cron_engine.parse_and_validate("0 * * * *")
   let now = birl.utc_now()
-  let vdt = birl_to_valid_datetime(now)
+  let vdt = cron_time.birl_to_valid_datetime(now)
   let assert option.Some(next_vdt) = cron.next_after(plan, after: vdt)
   // Next fire should be in the future
   let next_dt = schedule_ast.valid_datetime_value(next_vdt)
-  let next_unix = datetime_to_unix(next_dt)
+  let next_unix = cron_time.datetime_to_unix(next_dt)
   let now_unix = birl.to_unix(now)
   let assert True = next_unix >= now_unix
 }
@@ -541,4 +492,36 @@ pub fn tick_fires_skill_without_agent_uses_minimal_handlers_test() {
 
     cron_engine.stop(engine)
   })
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Round-trip conversion tests
+// ═══════════════════════════════════════════════════════════════
+
+pub fn birl_roundtrip_test() {
+  // Create a known time, convert to ValidDateTime and back to unix.
+  // The round-trip should preserve the timestamp (to the second).
+  let now = birl.utc_now()
+  let unix_before = birl.to_unix(now)
+
+  let vdt = cron_time.birl_to_valid_datetime(now)
+  let dt = schedule_ast.valid_datetime_value(vdt)
+  let unix_after = cron_time.datetime_to_unix(dt)
+
+  let assert True = unix_before == unix_after
+}
+
+pub fn datetime_year_is_4_digits_test() {
+  // Ensure the year is formatted as 4 digits, not 2.
+  // This is a regression test for the pad2(y) bug.
+  let now = birl.utc_now()
+  let vdt = cron_time.birl_to_valid_datetime(now)
+  let dt = schedule_ast.valid_datetime_value(vdt)
+
+  let schedule_ast.DateTime(date: schedule_ast.Date(year: y, ..), ..) = dt
+
+  // Year 2024+ should format as "2024", not "24"
+  let assert True = y >= 2024
+  let unix = cron_time.datetime_to_unix(dt)
+  let assert True = unix > 1_700_000_000
 }

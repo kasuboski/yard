@@ -22,8 +22,9 @@ import gleam/option
 import gleam/string
 import pig
 import sqlight
+import telega/api
 import telega/bot
-import telega/reply
+import telega/model/types
 import telega/router
 import telega/update
 
@@ -144,19 +145,33 @@ fn handle_text(
 ) -> fn(bot.Context(HermesSession, Nil), String) ->
   Result(bot.Context(HermesSession, Nil), Nil) {
   fn(ctx: bot.Context(HermesSession, Nil), text) {
-    io.println("[text] Received message for user: " <> ctx.session.user_key)
+    io.println("[text] Received: " <> text <> " from " <> ctx.session.user_key)
 
     // Fix "pending" user_key if needed (first message from new user)
     let ctx = ensure_user_key(config, ctx)
 
+    // NOTE: telega send_chat_action bug: decodes response as Message
+    // but Telegram API returns Bool. Disabled until telega fixes this.
+    // api.send_chat_action -> Result(Message, ...) but API returns True.
+
+    io.println("[text] Calling LLM...")
     let response = session.run_prompt(ctx.session, text)
+    io.println(case response {
+      Ok(_) -> "[text] LLM responded"
+      Error(_) -> "[text] LLM error"
+    })
+
     case response {
       Ok(content) -> {
-        let _ = reply.with_text(ctx, content)
+        let reply_text = case content {
+          "" -> "Processing complete (no text response)."
+          _ -> content
+        }
+        let _ = send_reply(ctx, reply_text)
         Ok(ctx)
       }
       Error(_) -> {
-        let _ = reply.with_text(ctx, "Sorry, I encountered an error.")
+        let _ = send_reply(ctx, "Sorry, I encountered an error.")
         Ok(ctx)
       }
     }
@@ -177,16 +192,66 @@ fn handle_new(
     case session.reset(config.session_config, ctx.session) {
       Ok(new_session) -> {
         io.println("[/new] Reset OK, new session: " <> new_session.session_id)
-        let assert Ok(ctx) = bot.next_session(ctx, new_session)
-        let _ = reply.with_text(ctx, "Starting fresh! Workspace preserved.")
-        io.println("[/new] Reply sent, returning updated context")
-        Ok(ctx)
+        case bot.next_session(ctx, new_session) {
+          Ok(ctx) -> {
+            let _ = send_reply(ctx, "Starting fresh! Workspace preserved.")
+            io.println("[/new] Reply sent, returning updated context")
+            Ok(ctx)
+          }
+          Error(_) -> {
+            io.println("[/new] ERROR: next_session failed")
+            let _ =
+              send_reply(ctx, "Reset succeeded but failed to update session.")
+            Ok(ctx)
+          }
+        }
       }
       Error(_) -> {
         io.println("[/new] ERROR: session.reset failed!")
-        let _ = reply.with_text(ctx, "Failed to reset session.")
+        let _ = send_reply(ctx, "Failed to reset session.")
         Ok(ctx)
       }
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Reply helper — uses ctx.update.chat_id, not ctx.key
+// ═══════════════════════════════════════════════════════════════
+
+/// Send a text reply to the correct Telegram chat.
+///
+/// telega's reply.with_text sends to ctx.key which is
+/// "{chat_id}:{from_id}" — not a valid Telegram chat_id.
+/// We use ctx.update.chat_id directly instead.
+fn send_reply(
+  ctx: bot.Context(HermesSession, Nil),
+  text: String,
+) -> Result(Nil, Nil) {
+  case
+    api.send_message(
+      ctx.config.api_client,
+      parameters: types.SendMessageParameters(
+        text:,
+        chat_id: types.Int(ctx.update.chat_id),
+        business_connection_id: option.None,
+        message_thread_id: option.None,
+        parse_mode: option.None,
+        entities: option.None,
+        link_preview_options: option.None,
+        disable_notification: option.None,
+        protect_content: option.None,
+        message_effect_id: option.None,
+        allow_paid_broadcast: option.None,
+        reply_parameters: option.None,
+        reply_markup: option.None,
+      ),
+    )
+  {
+    Ok(_) -> Ok(Nil)
+    Error(e) -> {
+      io.println("[error] send_reply failed: " <> string.inspect(e))
+      Error(Nil)
     }
   }
 }
@@ -221,8 +286,10 @@ fn ensure_user_key(
         )
       {
         Ok(new_session) -> {
-          let assert Ok(ctx) = bot.next_session(ctx, new_session)
-          ctx
+          case bot.next_session(ctx, new_session) {
+            Ok(ctx) -> ctx
+            Error(_) -> ctx
+          }
         }
         Error(_) -> ctx
         // Keep pending session as fallback

@@ -107,8 +107,10 @@ fn param_to_value(p: Param) -> sqlight.Value {
 }
 
 fn bit_array_to_string(ba: BitArray) -> String {
-  let assert Ok(s) = bit_array.to_string(ba)
-  s
+  case bit_array.to_string(ba) {
+    Ok(s) -> s
+    Error(_) -> ""
+  }
 }
 
 fn params_to_values(params: List(Param)) -> List(sqlight.Value) {
@@ -277,36 +279,53 @@ pub fn save_provider(
 ) -> Result(Provider, Nil) {
   let now = now_ts()
 
+  // Wrap delete + insert in a transaction for atomicity
+  let _ = sqlight.exec("BEGIN TRANSACTION", on: conn)
+
   // Delete any existing provider
   let #(del_sql, _del_params) = sql.save_provider()
-  let _ = sqlight.exec(del_sql, on: conn)
-
-  // Insert new provider
-  let #(ins_sql, ins_params) =
-    sql.insert_provider(
-      id: "default",
-      api_key: api_key,
-      base_url: base_url,
-      model: model,
-      created_at: now,
-      updated_at: now,
-    )
-
-  case
-    sqlight.query(
-      ins_sql,
-      on: conn,
-      with: params_to_values(ins_params),
-      expecting: dyn_decode.success(Nil),
-    )
-  {
-    Ok(_) -> Ok(Provider("default", api_key, base_url, model))
+  case sqlight.exec(del_sql, on: conn) {
     Error(e) -> {
+      let _ = sqlight.exec("ROLLBACK", on: conn)
       logging.log(
         logging.Error,
-        "db.save_provider insert failed: " <> string.inspect(e),
+        "db.save_provider delete failed: " <> string.inspect(e),
       )
       Error(Nil)
+    }
+    Ok(_) -> {
+      // Insert new provider
+      let #(ins_sql, ins_params) =
+        sql.insert_provider(
+          id: "default",
+          api_key: api_key,
+          base_url: base_url,
+          model: model,
+          created_at: now,
+          updated_at: now,
+        )
+
+      case
+        sqlight.query(
+          ins_sql,
+          on: conn,
+          with: params_to_values(ins_params),
+          expecting: dyn_decode.success(Nil),
+        )
+      {
+        Ok(_) -> {
+          let _ = sqlight.exec("COMMIT", on: conn)
+          Ok(Provider("default", api_key, base_url, model))
+        }
+        Error(e) -> {
+          let _ = sqlight.exec("ROLLBACK", on: conn)
+          logging.log(
+            logging.Error,
+            "db.save_provider insert failed: " <> string.inspect(e),
+          )
+          Error(Nil)
+        }
+      }
     }
   }
 }
