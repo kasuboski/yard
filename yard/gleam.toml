@@ -12,6 +12,7 @@ telemetry = ">= 1.0.0 and < 2.0.0"
 chute = { path = "../chute" }
 ballast = { path = "../ballast" }
 gabsurd = { path = "../../gabsurd" }
+pig = { path = "../../pig" }
 
 # Database
 sqlight = ">= 1.1.0 and < 2.0.0"
