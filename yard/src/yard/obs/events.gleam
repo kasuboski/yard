@@ -79,6 +79,18 @@ pub type HostEvent {
     duration_ms: Int,
     depth: Int,
   )
+
+  /// An effect was replayed from a checkpoint (durable runner).
+  /// Emitted instead of EffectYielded + EffectHandled when a stored
+  /// checkpoint value is fed to Ballast on retry.
+  EffectReplayed(
+    actor_path: String,
+    actor_hash: String,
+    run_id: String,
+    effect_name: String,
+    step_name: String,
+    depth: Int,
+  )
 }
 
 // ── Telemetry Name Constants ─────────────────────────────────────────
@@ -99,6 +111,10 @@ pub fn effect_handled_name() -> List(String) {
   ["yard", "effect", "handled"]
 }
 
+pub fn effect_replayed_name() -> List(String) {
+  ["yard", "effect", "replayed"]
+}
+
 /// All yard telemetry event names.
 pub fn all_event_names() -> List(List(String)) {
   [
@@ -106,6 +122,7 @@ pub fn all_event_names() -> List(List(String)) {
     actor_completed_name(),
     effect_yielded_name(),
     effect_handled_name(),
+    effect_replayed_name(),
   ]
 }
 
@@ -211,6 +228,27 @@ pub fn emit_telemetry(event: HostEvent) -> Nil {
           #("depth", int_to_string(depth)),
         ])
       ffi_execute(effect_handled_name(), measurements, metadata)
+    }
+
+    EffectReplayed(
+      actor_path:,
+      actor_hash:,
+      run_id:,
+      effect_name:,
+      step_name:,
+      depth:,
+    ) -> {
+      let measurements = dict.from_list([#("system_time", ffi_system_time())])
+      let metadata =
+        dict.from_list([
+          #("actor_path", actor_path),
+          #("actor_hash", actor_hash),
+          #("run_id", run_id),
+          #("effect_name", effect_name),
+          #("step_name", step_name),
+          #("depth", int_to_string(depth)),
+        ])
+      ffi_execute(effect_replayed_name(), measurements, metadata)
     }
   }
 }

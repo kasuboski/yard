@@ -3,6 +3,7 @@
 import ballast/value.{GasExhausted, IntVal, NilVal, RuntimeError, StringVal}
 import gleam/dict
 import gleam/erlang/process
+import gleam/option
 import gleam/list
 import gleam/string
 import gleeunit
@@ -50,6 +51,7 @@ fn make_config(
     trigger_type: "test",
     trigger_source: "runner_test",
     depth: 0,
+  checkpointer: option.None,
   )
 }
 
@@ -237,6 +239,7 @@ pub fn gas_exhaustion_test() {
       trigger_type: "test",
       trigger_source: "runner_test",
       depth: 0,
+    checkpointer: option.None,
     )
 
   let assert Error(GasExhausted) = runner.run(config)

@@ -299,6 +299,7 @@ fn fire_schedule(
               trigger_type: "cron",
               trigger_source: "schedule:" <> schedule.id,
               depth: 0,
+              checkpointer: option.None,
             )
           let _run_result = runner.run(config)
           // Whether it succeeds or fails, we still reschedule
