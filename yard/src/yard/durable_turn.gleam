@@ -10,8 +10,6 @@
 //// 5. Resolve entry point from the assembled message log
 
 import gleam/option
-import gleam/json
-import gleam/dynamic/decode
 import gleam/list
 import pig/ai/message.{type Message, User}
 import yard/agent_checkpoint.{type EntryPoint}
@@ -47,7 +45,8 @@ pub fn assemble_history(
 ) -> Result(AssembledHistory, AssemblyError) {
   // Load conversation history from the store (previous turns)
   let conv_history = case conversation.load(store, conversation_id) {
-    Ok(option.Some(json_str)) -> parse_message_list(json_str)
+    Ok(option.Some(json_str)) ->
+      agent_checkpoint.messages_from_json_string(json_str)
     _ -> []
   }
 
@@ -87,14 +86,3 @@ pub type AssemblyError {
 }
 
 /// Parse a JSON array string into a List(Message).
-fn parse_message_list(json_str: String) -> List(Message) {
-  case json.parse(json_str, decode.list(of: agent_message_decoder())) {
-    Ok(msgs) -> msgs
-    Error(_) -> []
-  }
-}
-
-// Re-export the message decoder for parsing conversation store JSON.
-fn agent_message_decoder() -> decode.Decoder(Message) {
-  agent_checkpoint.message_decoder()
-}

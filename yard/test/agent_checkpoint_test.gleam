@@ -96,7 +96,6 @@ pub fn assistant_no_stop_reason_calls_llm_test() {
   )
 }
 
-/// Empty message list → call LLM (first turn)
 // ── Message checkpoint round-trip ─────────────────────────────────
 
 /// Messages saved as checkpoints can be loaded back in order.

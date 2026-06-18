@@ -112,6 +112,27 @@ fn save_messages_loop(
   }
 }
 
+// ── Message list serialization (for conversations table) ───────────
+
+/// Serialize a list of messages to a JSON array string.
+/// Used for storing conversation state in the conversations table.
+pub fn messages_to_json_string(messages: List(Message)) -> String {
+  json.to_string(
+    json.array(from: messages, of: fn(msg) {
+      message_to_json(msg)
+    }),
+  )
+}
+
+/// Deserialize a JSON array string back into a list of messages.
+/// Returns an empty list on parse failure.
+pub fn messages_from_json_string(json_str: String) -> List(Message) {
+  case json.parse(json_str, decode.list(of: message_decoder())) {
+    Ok(msgs) -> msgs
+    Error(_) -> []
+  }
+}
+
 // ── Message serialization ────────────────────────────────────────────
 
 fn message_to_json_string(msg: Message) -> String {
