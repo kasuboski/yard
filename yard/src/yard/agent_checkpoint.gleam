@@ -179,7 +179,8 @@ fn tool_call_to_json(tc: message.ToolCall) -> json.Json {
   ])
 }
 
-fn message_decoder() -> decode.Decoder(Message) {
+/// Decode a JSON string back into a ballast Value.
+pub fn message_decoder() -> decode.Decoder(Message) {
   use role <- decode.field("role", decode.string)
   case role {
     "user" -> {
