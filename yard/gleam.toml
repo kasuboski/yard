@@ -11,6 +11,7 @@ gleam_json = ">= 3.0.0 and < 4.0.0"
 telemetry = ">= 1.0.0 and < 2.0.0"
 chute = { path = "../chute" }
 ballast = { path = "../ballast" }
+gabsurd = { path = "../../gabsurd" }
 
 # Database
 sqlight = ">= 1.1.0 and < 2.0.0"
