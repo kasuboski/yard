@@ -14,6 +14,9 @@ ballast = { path = "../ballast" }
 gabsurd = { path = "../../gabsurd" }
 pig = { path = "../../pig" }
 
+# HTTP server for observability UI
+mist = ">= 4.0.0"
+
 # Database
 sqlight = ">= 1.1.0 and < 2.0.0"
 parrot = ">= 2.2.1 and < 3.0.0"

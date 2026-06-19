@@ -24,6 +24,8 @@ import gleam/erlang/process
 import gleam/list
 import gleam/otp/actor
 import gleam/otp/static_supervisor
+import gabsurd/client.{type Db}
+import yard/ui/server as ui_server
 import yard/obs/consumer_spec.{type ConsumerSpec}
 import yard/obs/dispatcher
 
@@ -86,4 +88,26 @@ pub fn start(consumers: List(ConsumerSpec)) -> Result(Yard, actor.StartError) {
 /// to all children (dispatcher + consumers).
 pub fn stop(yard: Yard) -> Nil {
   process.send_exit(yard.sup_pid)
+}
+
+// ── UI ─────────────────────────────────────────────────────────────
+
+/// Start yard with the observability UI server.
+///
+/// This starts the standard yard observability stack AND an HTTP server
+/// serving the dashboard at the given port. The UI queries yard_events,
+/// conversations, and absurd task tables directly from PostgreSQL.
+///
+/// In production, call this instead of `start()` when you want the dashboard.
+pub fn start_with_ui(
+  consumers: List(ConsumerSpec),
+  db db: Db,
+  queue_name queue_name: String,
+  ui_port ui_port: Int,
+) -> Result(Yard, actor.StartError) {
+  // Start the UI server (non-fatal if it fails)
+  let _ = ui_server.start(db:, queue_name:, port: ui_port)
+
+  // Start the standard yard stack
+  start(consumers)
 }
