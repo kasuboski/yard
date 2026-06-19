@@ -7,7 +7,7 @@ import gleam/erlang/process
 import gleam/option
 import gleeunit
 import pig/ai/error.{ApiError}
-import pig/ai/message.{Assistant, Tool, User}
+import pig/ai/message.{Assistant, User}
 import pig/ai/provider.{InferenceResult, default_metadata, with_stop_reason}
 import pig/ai/stop_reason.{Stop}
 import yard/agent_checkpoint
