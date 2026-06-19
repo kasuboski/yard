@@ -44,6 +44,9 @@ echo "📋 Applying Absurd schema..."
 docker exec -i "${CONTAINER_NAME}" psql -U "${DB_USER}" -d "${DB_NAME}" < "${GABSURD_ROOT}/priv/stubs.sql" 2>/dev/null || true
 docker exec -i "${CONTAINER_NAME}" psql -U "${DB_USER}" -d "${DB_NAME}" < "${GABSURD_ROOT}/priv/absurd.sql"
 
+echo "📋 Applying cron test stub..."
+docker exec -i "${CONTAINER_NAME}" psql -U "${DB_USER}" -d "${DB_NAME}" < "${PROJECT_ROOT}/yard/src/yard/sql/cron_test_stub.sql"
+
 echo "📋 Applying Yard durable schema..."
 docker exec -i "${CONTAINER_NAME}" psql -U "${DB_USER}" -d "${DB_NAME}" < "${PROJECT_ROOT}/yard/src/yard/sql/durable_schema.sql"
 
