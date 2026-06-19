@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS conversations (
   id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   agent_id    TEXT NOT NULL,
   user_key    TEXT NOT NULL,
-  messages    JSONB NOT NULL DEFAULT '[]',
+  messages    TEXT NOT NULL DEFAULT '[]',
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
