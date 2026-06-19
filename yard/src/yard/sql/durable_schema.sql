@@ -29,12 +29,16 @@ CREATE INDEX IF NOT EXISTS idx_conversations_agent_user
 
 CREATE TABLE IF NOT EXISTS yard_events (
   id          BIGSERIAL PRIMARY KEY,
-  run_id      UUID NOT NULL REFERENCES absurd_runs(id),
+  run_id      UUID NOT NULL,
   event_type  TEXT NOT NULL,
   payload     JSONB NOT NULL,
   duration_ms INTEGER,
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Note: run_id references per-queue run tables (e.g. absurd.r_<queue>),
+-- which are created dynamically by absurd.create_queue(). A global FK
+-- is not possible because the run table name varies by queue.
 
 CREATE INDEX IF NOT EXISTS idx_yard_events_run_id
   ON yard_events(run_id);

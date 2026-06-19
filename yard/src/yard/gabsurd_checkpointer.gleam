@@ -41,11 +41,11 @@ pub fn from_context(ctx: Context) -> Checkpointer {
 ///
 /// Use this when you have the raw components but not a full Context.
 pub fn from_parts(
-  db: Db,
-  queue_name: String,
-  task_id: BitArray,
-  run_id: BitArray,
-  claim_timeout: Int,
+  db db: Db,
+  queue_name queue_name: String,
+  task_id task_id: BitArray,
+  run_id run_id: BitArray,
+  claim_timeout claim_timeout: Int,
 ) -> Checkpointer {
   checkpoint.Checkpointer(
     save: fn(step_name: String, json_str: String) {
