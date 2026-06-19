@@ -6,7 +6,6 @@
 
 import gleam/dynamic
 import gleam/dynamic/decode
-import gleam/erlang/process
 import gleam/json
 import gleam/option
 import gleam/string

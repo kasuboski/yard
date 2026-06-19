@@ -2,7 +2,6 @@
 ////
 //// Requires: docker container running with durable_schema.sql applied.
 
-import gleam/erlang/process
 import gleeunit
 import gleeunit/should
 import gabsurd/client
