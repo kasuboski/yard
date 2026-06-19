@@ -44,7 +44,6 @@ fn with_queue(
   let assert Ok(Nil) = queue.create(db, queue_name)
   let result = test_fn(db, queue_name)
   let _ = queue.drop(db, queue_name)
-  process.send_exit(db.pid)
   result
 }
 

@@ -31,9 +31,7 @@ fn with_store(test_fn: fn(conversation.ConversationStore) -> a) -> a {
   let assert Ok(started) = client.start(db_url)
   let db = started.data
   let store = pg_conversation.from_db(db:)
-  let result = test_fn(store)
-  process.send_exit(db.pid)
-  result
+  test_fn(store)
 }
 
 /// Parse JSON to a canonical dynamic for comparison.

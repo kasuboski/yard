@@ -17,10 +17,7 @@ pub fn main() {
 
 fn with_db(test_fn: fn(client.Db) -> a) -> a {
   let assert Ok(started) = client.start(db_url)
-  let db = started.data
-  let result = test_fn(db)
-  process.send_exit(db.pid)
-  result
+  test_fn(started.data)
 }
 
 fn make_run_id() -> String {

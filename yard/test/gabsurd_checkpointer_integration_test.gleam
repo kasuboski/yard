@@ -5,7 +5,6 @@
 ////
 //// Requires: docker container running (bin/postgres.sh)
 
-import gleam/erlang/process
 import gleam/int
 import gleam/json
 import gleam/option
@@ -38,14 +37,14 @@ fn with_setup(test_fn: fn(client.Db, String, task.Claim) -> a) -> a {
       json.object([#("agent_id", json.string("agent-1"))]),
       task.new_options(),
     )
-  let assert Ok(claims) =
-    task.claim(db, queue_name, "test-worker", 300, 1)
+  let assert Ok(claims) = task.claim(db, queue_name, "test-worker", 300, 1)
   let assert [claim] = claims
 
   let result = test_fn(db, queue_name, claim)
 
   let _ = queue.drop(db, queue_name)
-  process.send_exit(db.pid)
+  // Don't kill the pool — it dies when the test VM exits.
+  // Killing it causes "no connection available" in concurrent tests.
   result
 }
 
