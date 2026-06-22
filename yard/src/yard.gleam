@@ -127,8 +127,10 @@ pub fn start_with_ui(
         sup_pid: yard.sup_pid,
         ui_sup_pid: option.Some(ui_started.pid),
       ))
-    Error(_) ->
-      // UI failed to start — return yard without UI
-      Ok(yard)
+    Error(e) -> {
+      // UI failed to start — tear down yard and fail fast
+      stop(yard)
+      Error(e)
+    }
   }
 }
