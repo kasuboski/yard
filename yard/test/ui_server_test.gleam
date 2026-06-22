@@ -5,9 +5,11 @@
 
 import gleam/int
 import gleam/http/request
+import gleam/http/response
 import gleam/httpc
 import gleam/string
 import gleeunit
+import gleeunit/should
 import gabsurd/client
 import gabsurd/queue
 import yard/ui/server
@@ -39,39 +41,40 @@ fn with_server(test_fn: fn(Int) -> a) -> a {
 @external(erlang, "timer", "sleep")
 fn timer_sleep(ms: Int) -> Nil
 
-fn http_get(url: String) -> Result(String, Nil) {
+fn http_get(url: String) -> Result(response.Response(String), Nil) {
   let assert Ok(req) = request.to(url)
   case httpc.send(req) {
-    Ok(resp) -> Ok(resp.body)
+    Ok(resp) -> Ok(resp)
     Error(_) -> Error(Nil)
   }
 }
 
-/// The dashboard page should be served at /.
+/// The dashboard page should be served at / with status 200.
 pub fn dashboard_served_test() {
   with_server(fn(port) {
     case http_get("http://localhost:" <> int.to_string(port) <> "/") {
-      Ok(response) -> {
-        let assert True = string.contains(response, "Yard Dashboard")
-        let assert True = string.contains(response, "<html")
+      Ok(resp) -> {
+        should.equal(resp.status, 200)
+        should.be_true(string.contains(resp.body, "Yard Dashboard"))
+        should.be_true(string.contains(resp.body, "<html"))
       }
       Error(_) -> {
         // Server may not have started — try anyway, assertion will fail
-        let assert True = False
+        should.be_true(False)
       }
     }
   })
 }
 
-/// Unknown paths return 404.
+/// Unknown paths return 404 status.
 pub fn not_found_test() {
   with_server(fn(port) {
     case http_get("http://localhost:" <> int.to_string(port) <> "/nonexistent") {
-      Ok(response) -> {
-        let assert True = string.contains(response, "404")
+      Ok(resp) -> {
+        should.equal(resp.status, 404)
       }
       Error(_) -> {
-        let assert True = False
+        should.be_true(False)
       }
     }
   })

@@ -1,13 +1,14 @@
 //// Host event types and telemetry projection.
 ////
-//// Four HostEvent variants cover all runner observability:
+//// Five HostEvent variants cover all runner observability:
 //// - ActorStarted / ActorCompleted — lifecycle
 //// - EffectYielded / EffectHandled — per-effect timing
+//// - EffectReplayed — per-effect replay (durable runner)
 ////
 //// Effects and triggers are data (string fields), not type variants.
 //// Adding new effects or triggers requires zero changes here.
 ////
-//// Telemetry is always projected — every HostEvent maps to one of four
+//// Telemetry is always projected — every HostEvent maps to one of five
 //// telemetry event names under the `yard.*` namespace.
 
 import gleam/dict.{type Dict}

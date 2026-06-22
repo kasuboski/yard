@@ -22,8 +22,10 @@
 
 import gleam/erlang/process
 import gleam/list
+import gleam/option
 import gleam/otp/actor
 import gleam/otp/static_supervisor
+import gleam/result
 import gabsurd/client.{type Db}
 import yard/ui/server as ui_server
 import yard/obs/consumer_spec.{type ConsumerSpec}
@@ -39,6 +41,7 @@ pub type Yard {
   Yard(
     dispatcher: process.Subject(dispatcher.DispatcherMessage),
     sup_pid: process.Pid,
+    ui_sup_pid: option.Option(process.Pid),
   )
 }
 
@@ -76,7 +79,11 @@ pub fn start(consumers: List(ConsumerSpec)) -> Result(Yard, actor.StartError) {
         )
       })
 
-      Ok(Yard(dispatcher: dispatcher_subject, sup_pid: started.pid))
+      Ok(Yard(
+        dispatcher: dispatcher_subject,
+        sup_pid: started.pid,
+        ui_sup_pid: option.None,
+      ))
     }
     Error(e) -> Error(e)
   }
@@ -84,9 +91,13 @@ pub fn start(consumers: List(ConsumerSpec)) -> Result(Yard, actor.StartError) {
 
 /// Stop the yard system.
 ///
-/// Sends an exit signal to the supervisor. OTP cascades shutdown
-/// to all children (dispatcher + consumers).
+/// Sends an exit signal to both the observability supervisor and the UI
+/// supervisor (if running). OTP cascades shutdown to all children.
 pub fn stop(yard: Yard) -> Nil {
+  case yard.ui_sup_pid {
+    option.Some(pid) -> process.send_exit(pid)
+    option.None -> Nil
+  }
   process.send_exit(yard.sup_pid)
 }
 
@@ -105,9 +116,19 @@ pub fn start_with_ui(
   queue_name queue_name: String,
   ui_port ui_port: Int,
 ) -> Result(Yard, actor.StartError) {
-  // Start the UI server (non-fatal if it fails)
-  let _ = ui_server.start(db:, queue_name:, port: ui_port)
+  // Start the standard yard stack first
+  use yard <- result.try(start(consumers))
 
-  // Start the standard yard stack
-  start(consumers)
+  // Start the UI server and capture its supervisor PID
+  case ui_server.start(db:, queue_name:, port: ui_port) {
+    Ok(ui_started) ->
+      Ok(Yard(
+        dispatcher: yard.dispatcher,
+        sup_pid: yard.sup_pid,
+        ui_sup_pid: option.Some(ui_started.pid),
+      ))
+    Error(_) ->
+      // UI failed to start — return yard without UI
+      Ok(yard)
+  }
 }
