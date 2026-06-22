@@ -10,6 +10,7 @@
 
 import gleam/dynamic/decode
 import gleam/json
+import gleam/string
 import gabsurd/client.{type Db, type GabsurdError}
 import parrot/dev
 
@@ -125,15 +126,19 @@ fn build_spawn_command(
 ) -> String {
   // The cron command runs inside PostgreSQL. It calls absurd's spawn_task
   // function to create a new task in the queue.
-  //
-  // The params are passed as a JSON literal cast to jsonb.
-  "SELECT absurd.spawn_task('"
-  <> queue_name
-  <> "', '"
-  <> task_name
-  <> "', '"
-  <> params_str
-  <> "'::jsonb)"
+  // Values are SQL-escaped (single quotes doubled) to prevent injection.
+  "SELECT absurd.spawn_task("
+  <> sql_literal(queue_name)
+  <> ", "
+  <> sql_literal(task_name)
+  <> ", "
+  <> sql_literal(params_str)
+  <> "::jsonb)"
+}
+
+/// Escape a string as a SQL literal by doubling single quotes.
+fn sql_literal(s: String) -> String {
+  "'" <> string.replace(s, "'", "''") <> "'"
 }
 
 fn error_to_string(e: GabsurdError) -> String {

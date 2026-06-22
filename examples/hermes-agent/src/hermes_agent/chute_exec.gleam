@@ -161,7 +161,7 @@ pub fn run(
           trigger_type: "tool_call",
           trigger_source: "chute_exec",
           depth: 0,
-        )
+          checkpointer: option.None,
 
       case runner.run(run_config) {
         Ok(result) -> {

@@ -14,12 +14,14 @@ pub fn dashboard(runs: List(RunSummary), conversations: List(ConversationRow)) -
 
 /// Generate the run detail page.
 pub fn run_detail(run_id: String, events: List(EventRow)) -> String {
-  page("Run " <> run_id, run_detail_body(run_id, events))
+  let safe_id = escape(run_id)
+  page("Run " <> safe_id, run_detail_body(run_id, events))
 }
 
 /// Generate the conversation detail page.
 pub fn conversation_detail(id: String, messages_json: String) -> String {
-  page("Conversation " <> truncate(id, 12), conversation_body(id, messages_json))
+  let safe_id = escape(id)
+  page("Conversation " <> truncate(safe_id, 12), conversation_body(id, messages_json))
 }
 
 // ── Page wrapper ─────────────────────────────────────────────────────
@@ -31,7 +33,7 @@ fn page(title: String, body: String) -> String {
 <meta charset=\"UTF-8\">
 <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">
 <title>"
-  <> title
+  <> escape(title)
   <> "</title>
 <style>"
   <> css()
@@ -74,9 +76,10 @@ fn dashboard_body(runs: List(RunSummary), conversations: List(ConversationRow)) 
 // ── Run detail body ──────────────────────────────────────────────────
 
 fn run_detail_body(run_id: String, events: List(EventRow)) -> String {
+  let safe_id = escape(run_id)
   "<h1>Run Detail</h1>
 <p class=\"muted\">Run ID: <code>"
-  <> run_id
+  <> safe_id
   <> "</code></p>"
   <> events_table(events)
 }
@@ -84,9 +87,10 @@ fn run_detail_body(run_id: String, events: List(EventRow)) -> String {
 // ── Conversation body ────────────────────────────────────────────────
 
 fn conversation_body(id: String, messages_json: String) -> String {
+  let safe_id = escape(id)
   "<h1>Conversation</h1>
 <p class=\"muted\">ID: <code>"
-  <> truncate(id, 36)
+  <> safe_id
   <> "</code></p>
 <div class=\"messages\">"
   <> render_messages(messages_json)
@@ -105,7 +109,7 @@ fn runs_table(runs: List(RunSummary)) -> String {
 "
     <> string.join(list.map(runs, fn(r) {
       "<tr>"
-      <> "<td><a href=\"/runs/" <> r.run_id <> "\"><code>" <> truncate(r.run_id, 12) <> "</code></a></td>"
+      <> "<td><a href=\"/runs/" <> escape(r.run_id) <> "\"><code>" <> truncate(escape(r.run_id), 12) <> "</code></a></td>"
       <> "<td>" <> escape(r.task_name) <> "</td>"
       <> "<td><span class=\"badge badge-" <> status_class(r.status) <> "\">" <> escape(r.status) <> "</span></td>"
       <> "<td>" <> int.to_string(r.attempt) <> "</td>"
@@ -154,7 +158,7 @@ fn conversations_table(conversations: List(ConversationRow)) -> String {
 "
     <> string.join(list.map(conversations, fn(c) {
       "<tr>"
-      <> "<td><a href=\"/conversations/" <> c.id <> "\"><code>" <> truncate(c.id, 12) <> "</code></a></td>"
+      <> "<td><a href=\"/conversations/" <> escape(c.id) <> "\"><code>" <> truncate(escape(c.id), 12) <> "</code></a></td>"
       <> "<td>" <> escape(c.agent_id) <> "</td>"
       <> "<td>" <> escape(c.user_key) <> "</td>"
       <> "<td class=\"muted\">" <> escape(c.updated_at) <> "</td>"

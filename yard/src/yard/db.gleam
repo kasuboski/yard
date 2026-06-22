@@ -124,7 +124,16 @@ fn params_to_values(params: List(Param)) -> List(sqlight.Value) {
 /// Open a SQLite database at the given path.
 /// Use "file::memory:" for in-memory databases (tests).
 pub fn open(path: String) -> Result(sqlight.Connection, sqlight.Error) {
-  sqlight.open(path)
+  case sqlight.open(path) {
+    Ok(conn) -> {
+      // Enable foreign key enforcement — SQLite disables it by default.
+      case sqlight.exec("PRAGMA foreign_keys = ON", on: conn) {
+        Ok(Nil) -> Ok(conn)
+        Error(e) -> Error(e)
+      }
+    }
+    Error(e) -> Error(e)
+  }
 }
 
 /// Run all migrations to create the global schema.

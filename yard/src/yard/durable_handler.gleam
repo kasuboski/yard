@@ -9,6 +9,7 @@
 //// From DURABLE.md Component 6: Handler Registry & Worker Context.
 
 import ballast/value
+import gleam/bit_array
 import gleam/dict
 import gleam/dynamic/decode
 import gleam/json
@@ -75,7 +76,7 @@ pub fn execute_chute(
       emit:,
       actor_path: actor.actor_path,
       actor_hash: actor.actor_hash,
-      run_id: context.task_name(ctx),
+      run_id: bit_array.base16_encode(context.run_id(ctx)),
       trigger_type: "gabsurd",
       trigger_source: "task:" <> context.task_name(ctx),
       depth: 0,
