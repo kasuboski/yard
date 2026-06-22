@@ -205,6 +205,27 @@ pub fn format_event(event: HostEvent) -> String {
       ])
       |> json.to_string()
     }
+
+    events.EffectReplayed(
+      actor_path:,
+      actor_hash:,
+      run_id:,
+      effect_name:,
+      step_name:,
+      depth:,
+    ) -> {
+      json.object([
+        #("ts", json.string(ts)),
+        #("event", json.string("effect_replayed")),
+        #("actor_path", json.string(actor_path)),
+        #("actor_hash", json.string(actor_hash)),
+        #("run_id", json.string(run_id)),
+        #("effect_name", json.string(effect_name)),
+        #("step_name", json.string(step_name)),
+        #("depth", json.int(depth)),
+      ])
+      |> json.to_string()
+    }
   }
 }
 

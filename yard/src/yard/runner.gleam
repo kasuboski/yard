@@ -21,11 +21,16 @@ import ballast/value
 import chute/ast.{type Program}
 import gleam/dict.{type Dict}
 import gleam/erlang/process.{type Subject}
+import gleam/int
+import gleam/json
 import gleam/list
+import gleam/option.{type Option}
 import gleam/string
+import yard/checkpoint.{type Checkpointer}
 import yard/obs/dispatcher.{type DispatcherMessage}
 import yard/obs/emit
 import yard/obs/events.{type HostEvent}
+import yard/value_codec
 
 // ═══════════════════════════════════════════════════════════════════════
 // Public Types
@@ -68,6 +73,10 @@ pub type RunConfig {
     trigger_source: String,
     /// 0 = outer actor, 1+ = inner chute (via chute_exec).
     depth: Int,
+    /// Optional checkpoint store for durable execution.
+    /// When Some, effect handler results are checkpointed and replayed on retry.
+    /// When None, the runner behaves exactly as before (no durability).
+    checkpointer: Option(Checkpointer),
   )
 }
 
@@ -157,6 +166,68 @@ fn handle_yield(
   start_time: Int,
   effects_count: Int,
 ) -> Result(value.Value, value.RuntimeError) {
+  // Build the checkpoint step name: "{index}:{effect_name}"
+  let step_name = int.to_string(effects_count) <> ":" <> effect_name
+
+  // Check for a stored checkpoint (replay path)
+  case config.checkpointer, checkpoint_lookup(config.checkpointer, step_name) {
+    option.Some(_), Ok(option.Some(json_str)) -> {
+      // Replay: decode stored value, feed to Ballast, skip handler
+      case value_codec.from_json(json_str) {
+        Ok(stored_value) -> {
+          config.emit(events.EffectReplayed(
+            actor_path: config.actor_path,
+            actor_hash: config.actor_hash,
+            run_id: config.run_id,
+            effect_name:,
+            step_name:,
+            depth: config.depth,
+          ))
+          let resumed = ballast.resume(cont, stored_value)
+          run_loop(config, resumed, start_time, effects_count + 1)
+        }
+        Error(_decode_err) -> {
+          // Checkpoint corrupt — fall through to fresh execution
+          run_fresh_yield(
+            config,
+            effect_name,
+            args,
+            cont,
+            gas_remaining,
+            start_time,
+            effects_count,
+            step_name,
+          )
+        }
+      }
+    }
+    _, _ -> {
+      // No checkpoint or no checkpointer — fresh execution
+      run_fresh_yield(
+        config,
+        effect_name,
+        args,
+        cont,
+        gas_remaining,
+        start_time,
+        effects_count,
+        step_name,
+      )
+    }
+  }
+}
+
+/// Run the handler fresh, checkpoint the result if a checkpointer is present.
+fn run_fresh_yield(
+  config: RunConfig,
+  effect_name: String,
+  args: List(value.Value),
+  cont: effect.Continuation,
+  gas_remaining: Int,
+  start_time: Int,
+  effects_count: Int,
+  step_name: String,
+) -> Result(value.Value, value.RuntimeError) {
   config.emit(events.EffectYielded(
     actor_path: config.actor_path,
     actor_hash: config.actor_hash,
@@ -205,11 +276,36 @@ fn handle_yield(
             depth: config.depth,
           ))
 
+          // Checkpoint the result if a checkpointer is present
+          case config.checkpointer {
+            option.Some(cp) -> {
+              let json_value = value_codec.encode(handler_result)
+              let _ = checkpoint.save(cp, step_name, json.to_string(json_value))
+              Nil
+            }
+            option.None -> Nil
+          }
+
           let resumed = ballast.resume(cont, handler_result)
           run_loop(config, resumed, start_time, effects_count + 1)
         }
       }
     }
+  }
+}
+
+/// Safely look up a checkpoint, returning None on any error.
+fn checkpoint_lookup(
+  cp: Option(Checkpointer),
+  step_name: String,
+) -> Result(Option(String), Nil) {
+  case cp {
+    option.Some(store) ->
+      case checkpoint.load(store, step_name) {
+        Ok(v) -> Ok(v)
+        Error(_) -> Error(Nil)
+      }
+    option.None -> Ok(option.None)
   }
 }
 

@@ -111,6 +111,21 @@ pub fn format_event(event: HostEvent) -> String {
       <> dur_str
       <> depth_str
     }
+
+    events.EffectReplayed(
+      actor_path: _,
+      actor_hash: _,
+      run_id: _,
+      effect_name:,
+      step_name:,
+      depth:,
+    ) -> {
+      let depth_str = case depth {
+        0 -> ""
+        _ -> " | depth: " <> int.to_string(depth)
+      }
+      "[REPLAY] " <> effect_name <> " (" <> step_name <> ")" <> depth_str
+    }
   }
 }
 
