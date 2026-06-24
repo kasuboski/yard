@@ -62,7 +62,7 @@ pub fn record_effect_replayed_test() {
       actor_hash: "abcd1234",
       run_id: make_run_id(),
       effect_name: "greet",
-      step_name: "0:greet",
+      step: 0,
       depth: 0,
     )
     should.be_ok(pg_events.record_event(db:, event:))
@@ -115,7 +115,7 @@ pub fn record_all_event_types_test() {
         actor_hash: "abcd1234",
         run_id: rid,
         effect_name: "greet",
-        step_name: "0:greet",
+        step: 0,
         depth: 0,
       ),
     )

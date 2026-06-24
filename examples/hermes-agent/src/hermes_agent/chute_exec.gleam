@@ -20,6 +20,7 @@ import pig/ai/tool_definition.{ToolDefinition}
 import pig/tool.{type Tool, type ToolError, Tool, ToolError}
 import sqlight
 import yard/db
+import yard/durability
 import yard/loader
 import yard/obs/events.{type HostEvent}
 import yard/runner.{RunConfig}
@@ -161,7 +162,7 @@ pub fn run(
           trigger_type: "tool_call",
           trigger_source: "chute_exec",
           depth: 0,
-          checkpointer: option.None,
+          store: durability.none(),
 
       case runner.run(run_config) {
         Ok(result) -> {

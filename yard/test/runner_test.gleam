@@ -3,10 +3,10 @@
 import ballast/value.{GasExhausted, IntVal, NilVal, RuntimeError, StringVal}
 import gleam/dict
 import gleam/erlang/process
-import gleam/option
 import gleam/list
 import gleam/string
 import gleeunit
+import yard/durability
 import yard/loader
 import yard/obs/events.{
   type HostEvent, ActorCompleted, ActorStarted, EffectHandled, EffectYielded,
@@ -51,7 +51,7 @@ fn make_config(
     trigger_type: "test",
     trigger_source: "runner_test",
     depth: 0,
-  checkpointer: option.None,
+    store: durability.none(),
   )
 }
 
@@ -239,7 +239,7 @@ pub fn gas_exhaustion_test() {
       trigger_type: "test",
       trigger_source: "runner_test",
       depth: 0,
-    checkpointer: option.None,
+      store: durability.none(),
     )
 
   let assert Error(GasExhausted) = runner.run(config)

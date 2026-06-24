@@ -89,7 +89,7 @@ pub type HostEvent {
     actor_hash: String,
     run_id: String,
     effect_name: String,
-    step_name: String,
+    step: Int,
     depth: Int,
   )
 }
@@ -236,7 +236,7 @@ pub fn emit_telemetry(event: HostEvent) -> Nil {
       actor_hash:,
       run_id:,
       effect_name:,
-      step_name:,
+      step:,
       depth:,
     ) -> {
       let measurements = dict.from_list([#("system_time", ffi_system_time())])
@@ -246,7 +246,7 @@ pub fn emit_telemetry(event: HostEvent) -> Nil {
           #("actor_hash", actor_hash),
           #("run_id", run_id),
           #("effect_name", effect_name),
-          #("step_name", step_name),
+          #("step", int_to_string(step)),
           #("depth", int_to_string(depth)),
         ])
       ffi_execute(effect_replayed_name(), measurements, metadata)

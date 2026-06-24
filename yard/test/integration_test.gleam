@@ -7,10 +7,10 @@ import ballast/value.{IntVal, NilVal, StringVal}
 import gleam/dict
 import gleam/erlang/process
 import gleam/list
-import gleam/option
 import gleam/string
 import gleeunit
 import simplifile
+import yard/durability
 import yard/loader
 import yard/obs/dispatcher
 import yard/obs/events.{type HostEvent, ActorCompleted, ActorStarted}
@@ -52,7 +52,7 @@ pub fn runner_with_dispatcher_emits_events_test() {
       trigger_type: "test",
       trigger_source: "integration_test",
       depth: 0,
-    checkpointer: option.None,
+      store: durability.none(),
     )
 
   let assert Ok(IntVal(42)) = runner.run(config)
@@ -102,7 +102,7 @@ pub fn runner_with_effect_and_session_writer_test() {
       trigger_type: "test",
       trigger_source: "session_test",
       depth: 0,
-    checkpointer: option.None,
+      store: durability.none(),
     )
 
   let assert Ok(StringVal("Hi")) = runner.run(config)

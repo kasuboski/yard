@@ -23,6 +23,7 @@ import gleam/list
 import gleam/string
 import gleeunit
 import issue_triage.{extract_issue_numbers, sync_actor_source, sync_env}
+import yard/durability
 import yard/loader
 import yard/obs/events.{
   type HostEvent, ActorCompleted, ActorStarted, EffectYielded,
@@ -115,6 +116,7 @@ fn make_test_config(
     trigger_type: "test",
     trigger_source: "test",
     depth: 0,
+    store: durability.none(),
   )
 }
 

@@ -16,6 +16,7 @@ import gleam/json
 import gleam/option
 import gabsurd/context.{type Context}
 import gabsurd/worker.{type Handler, type HandlerResult}
+import yard/durability
 import yard/gabsurd_checkpointer
 import yard/loader
 import yard/obs/events
@@ -66,6 +67,7 @@ pub fn execute_chute(
   let assert Ok(actor) = loader.load(actor_source, "agent.chute")
 
   let cp = gabsurd_checkpointer.from_context(ctx)
+  let store = durability.from_checkpointer(cp)
 
   let config =
     runner.RunConfig(
@@ -80,7 +82,7 @@ pub fn execute_chute(
       trigger_type: "gabsurd",
       trigger_source: "task:" <> context.task_name(ctx),
       depth: 0,
-      checkpointer: option.Some(cp),
+      store:,
     )
 
   case runner.run(config) {

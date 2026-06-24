@@ -9,6 +9,9 @@
 //// Requires: docker container running (bin/postgres.sh)
 
 import ballast/value.{IntVal, NilVal, RuntimeError, StringVal}
+import gabsurd/client
+import gabsurd/queue
+import gabsurd/task
 import gleam/dict
 import gleam/erlang/process
 import gleam/int
@@ -17,17 +20,12 @@ import gleam/list
 import gleam/option
 import gleeunit
 import yard/checkpoint
+import yard/durability
 import yard/gabsurd_checkpointer
 import yard/loader
-import yard/obs/events.{
-  type HostEvent, EffectHandled,
-  EffectReplayed,
-}
+import yard/obs/events.{type HostEvent, EffectHandled, EffectReplayed}
 import yard/runner.{type EffectHandler, type RunConfig, RunConfig}
 import yard/value_codec
-import gabsurd/client
-import gabsurd/queue
-import gabsurd/task
 
 const db_url = "postgresql://gabsurd:gabsurd@127.0.0.1:5432/gabsurd"
 
@@ -35,9 +33,7 @@ pub fn main() {
   gleeunit.main()
 }
 
-fn with_queue(
-  test_fn: fn(client.Db, String) -> a,
-) -> a {
+fn with_queue(test_fn: fn(client.Db, String) -> a) -> a {
   let queue_name = "yard_runner_test_" <> int.to_string(client.unique_integer())
   let assert Ok(started) = client.start(db_url)
   let db = started.data
@@ -78,7 +74,7 @@ fn make_durable_config(
     trigger_type: "test",
     trigger_source: "pg_integration",
     depth: 0,
-    checkpointer: option.Some(cp),
+    store: durability.from_checkpointer(cp),
   )
 }
 
@@ -213,12 +209,13 @@ pub fn replay_skips_handlers_on_second_run_test() {
 
     // Verify replay events were emitted
     let events = drain_events(subject2, [])
-    let has_replay = list.any(events, fn(e) {
-      case e {
-        EffectReplayed(..) -> True
-        _ -> False
-      }
-    })
+    let has_replay =
+      list.any(events, fn(e) {
+        case e {
+          EffectReplayed(..) -> True
+          _ -> False
+        }
+      })
     let assert True = has_replay
   })
 }
@@ -283,18 +280,20 @@ pub fn partial_replay_then_fresh_test() {
 
     // Verify we got both EffectReplayed (for first) and EffectHandled (for second)
     let events = drain_events(subject, [])
-    let has_replay = list.any(events, fn(e) {
-      case e {
-        EffectReplayed(..) -> True
-        _ -> False
-      }
-    })
-    let has_handled = list.any(events, fn(e) {
-      case e {
-        EffectHandled(..) -> True
-        _ -> False
-      }
-    })
+    let has_replay =
+      list.any(events, fn(e) {
+        case e {
+          EffectReplayed(..) -> True
+          _ -> False
+        }
+      })
+    let has_handled =
+      list.any(events, fn(e) {
+        case e {
+          EffectHandled(..) -> True
+          _ -> False
+        }
+      })
     let assert True = has_replay
     let assert True = has_handled
   })

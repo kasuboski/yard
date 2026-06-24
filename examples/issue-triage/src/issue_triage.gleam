@@ -44,6 +44,7 @@ import pig
 import pig/ai/error
 import pig/ai/message
 import pig/ai/openai
+import yard/durability
 import yard/loader
 import yard/obs/dispatcher
 import yard/obs/events.{type HostEvent}
@@ -484,6 +485,7 @@ pub fn make_config(
     trigger_type: "cron",
     trigger_source: "periodic",
     depth: 0,
+    store: durability.none(),
   )
 }
 
