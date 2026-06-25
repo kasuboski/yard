@@ -22,6 +22,7 @@ import gleam/option
 import gleam/string
 import pig
 import sqlight
+import gabsurd/client.{type Db}
 import telega/api
 import telega/bot
 import telega/model/types
@@ -40,7 +41,7 @@ import yard/db
 /// can create HermesSession instances.
 pub type GatewayConfig {
   GatewayConfig(
-    global_conn: sqlight.Connection,
+    global_conn: Db,
     workspace_conn: sqlight.Connection,
     session_config: SessionConfig,
   )

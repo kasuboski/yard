@@ -8,16 +8,16 @@
 import ballast/value.{ErrorVal, ListVal, NilVal, OkVal, RecordVal, StringVal}
 import gleam/dict
 import gleam/erlang/process
-import gleam/int
 import gleam/list
-import gleam/option
 import gleam/otp/actor
 import gleam/string
+import gleam/json
+import gabsurd/client.{type Db}
 import pig/workspace/kv
 import pig/workspace/vfs
 import sqlight
-import yard/cron_engine
 import yard/db
+import yard/pg_cron
 import yard/obs/events.{type HostEvent}
 import yard/runner.{type EffectHandler}
 import yard/skill_repo
@@ -231,7 +231,7 @@ pub fn recall_handler(conn: sqlight.Connection) -> EffectHandler {
 
 /// Handler for register_skill effect: registers a skill in the global DB.
 pub fn register_skill_handler(
-  global_conn: sqlight.Connection,
+  global_conn: Db,
 ) -> EffectHandler {
   fn(_name, args) {
     case args {
@@ -251,7 +251,7 @@ pub fn register_skill_handler(
 }
 
 /// Handler for get_skill effect: looks up a skill by name.
-pub fn get_skill_handler(global_conn: sqlight.Connection) -> EffectHandler {
+pub fn get_skill_handler(global_conn: Db) -> EffectHandler {
   fn(_name, args) {
     case args {
       [StringVal(name)] ->
@@ -276,7 +276,7 @@ pub fn get_skill_handler(global_conn: sqlight.Connection) -> EffectHandler {
 }
 
 /// Handler for list_skills effect: lists all active skills.
-pub fn list_skills_handler(global_conn: sqlight.Connection) -> EffectHandler {
+pub fn list_skills_handler(global_conn: Db) -> EffectHandler {
   fn(_name, _args) {
     case skill_repo.list_all(global_conn) {
       Ok(skills) -> {
@@ -320,7 +320,7 @@ pub fn all_handlers(
 /// Build handlers with skill support (requires global DB).
 pub fn all_handlers_with_global(
   conn: sqlight.Connection,
-  global_conn: sqlight.Connection,
+  global_conn: Db,
   collector: EventCollector,
 ) -> dict.Dict(String, EffectHandler) {
   let base = [
@@ -341,12 +341,13 @@ pub fn all_handlers_with_global(
   dict.from_list(base)
 }
 
-/// Build handlers with cron support (requires engine + global DB).
+/// Build handlers with cron support (requires pg_cron + global DB).
 pub fn all_handlers_with_cron(
   conn: sqlight.Connection,
-  global_conn: sqlight.Connection,
+  global_conn: Db,
   collector: EventCollector,
-  engine: cron_engine.CronEngine,
+  pg_db: Db,
+  queue_name: String,
 ) -> dict.Dict(String, EffectHandler) {
   let base = [
     #("emit_event", emit_event_handler(collector)),
@@ -362,9 +363,9 @@ pub fn all_handlers_with_cron(
     #("register_agent", register_agent_handler(global_conn)),
     #("tell_user", tell_user_handler(collector)),
     #("learn", learn_handler(conn)),
-    #("schedule_cron", schedule_cron_handler(engine, global_conn)),
-    #("list_crons", list_crons_handler(engine)),
-    #("cancel_cron", cancel_cron_handler(engine)),
+    #("schedule_cron", schedule_cron_handler(pg_db, queue_name, global_conn)),
+    #("list_crons", list_crons_handler(pg_db)),
+    #("cancel_cron", cancel_cron_handler(pg_db)),
   ]
   dict.from_list(base)
 }
@@ -374,7 +375,7 @@ pub fn all_handlers_with_cron(
 // ═══════════════════════════════════════════════════════════════
 
 /// Handler for list_agents effect: lists all registered agents.
-pub fn list_agents_handler(global_conn: sqlight.Connection) -> EffectHandler {
+pub fn list_agents_handler(global_conn: Db) -> EffectHandler {
   fn(_name, _args) {
     case db.list_agents(global_conn) {
       Ok(agents) -> {
@@ -396,7 +397,7 @@ pub fn list_agents_handler(global_conn: sqlight.Connection) -> EffectHandler {
 
 /// Handler for register_agent effect: registers a new agent.
 pub fn register_agent_handler(
-  global_conn: sqlight.Connection,
+  global_conn: Db,
 ) -> EffectHandler {
   fn(_name, args) {
     case args {
@@ -452,29 +453,40 @@ pub fn learn_handler(conn: sqlight.Connection) -> EffectHandler {
 // Cron handlers (global DB via cron engine)
 // ═══════════════════════════════════════════════════════════════
 
-/// Handler for schedule_cron effect: registers a cron schedule.
-/// Uses global_conn to look up skill by name, then registers via engine.
+/// Handler for schedule_cron effect: registers a cron schedule via pg_cron.
+/// Uses global_conn to look up skill by name, then schedules via pg_cron.
 pub fn schedule_cron_handler(
-  engine: cron_engine.CronEngine,
-  global_conn: sqlight.Connection,
+  pg_db: Db,
+  queue_name: String,
+  global_conn: Db,
 ) -> EffectHandler {
   fn(_name, args) {
     case args {
       [StringVal(cron_expr), StringVal(skill_name)] ->
         case skill_repo.lookup(global_conn, skill_name) {
-          Ok(skill) ->
+          Ok(skill) -> {
+            // Build job name and params for pg_cron
+            let job_name = "hermes_" <> skill.id
+            let params =
+              json.object([
+                #("skill", json.string(skill.name)),
+                #("skill_id", json.string(skill.id)),
+              ])
             case
-              cron_engine.register(
-                engine,
-                skill_id: skill.id,
-                cron_expr: cron_expr,
-                agent_id: option.None,
+              pg_cron.schedule(
+                pg_db,
+                job_name:,
+                schedule: cron_expr,
+                queue_name:,
+                task_name: "run-chute",
+                params:,
               )
             {
-              Ok(id) -> Ok(OkVal(StringVal(id)))
-              Error(_) ->
-                Ok(ErrorVal(StringVal("schedule_cron: failed to register")))
+              Ok(_) -> Ok(OkVal(StringVal(job_name)))
+              Error(pg_cron.CronError(msg)) ->
+                Ok(ErrorVal(StringVal("schedule_cron: " <> msg)))
             }
+          }
           Error(msg) -> Ok(ErrorVal(StringVal(msg)))
         }
       _ ->
@@ -487,34 +499,46 @@ pub fn schedule_cron_handler(
   }
 }
 
-/// Handler for list_crons effect: lists all active schedules.
-pub fn list_crons_handler(engine: cron_engine.CronEngine) -> EffectHandler {
+/// Handler for list_crons effect: lists Hermes-managed schedules via pg_cron.
+/// Only returns jobs with the `hermes_` prefix to avoid exposing unrelated DB jobs.
+pub fn list_crons_handler(pg_db: Db) -> EffectHandler {
   fn(_name, _args) {
-    let schedules = cron_engine.list_schedules(engine)
-    let items =
-      list.map(schedules, fn(s) {
-        RecordVal([
-          #("id", StringVal(s.id)),
-          #("cron_expr", StringVal(s.cron_expr)),
-          #("skill_id", StringVal(s.skill_id)),
-          #("status", StringVal(s.status)),
-          #("next_fire_at", StringVal(int.to_string(s.next_fire_at))),
-        ])
-      })
-    Ok(OkVal(ListVal(items)))
+    case pg_cron.list_jobs(pg_db) {
+      Ok(jobs) -> {
+        let items =
+          jobs
+          |> list.filter(fn(j) { string.starts_with(j.job_name, "hermes_") })
+          |> list.map(fn(j) {
+            RecordVal([
+              #("job_name", StringVal(j.job_name)),
+              #("schedule", StringVal(j.schedule)),
+              #("command", StringVal(j.command)),
+            ])
+          })
+        Ok(OkVal(ListVal(items)))
+      }
+      Error(pg_cron.CronError(msg)) -> Ok(ErrorVal(StringVal(msg)))
+    }
   }
 }
 
-/// Handler for cancel_cron effect: cancels a schedule.
-pub fn cancel_cron_handler(engine: cron_engine.CronEngine) -> EffectHandler {
+/// Handler for cancel_cron effect: cancels a Hermes-managed schedule.
+/// Rejects job names that don't have the `hermes_` prefix to prevent
+/// cancelling unrelated database cron jobs.
+pub fn cancel_cron_handler(pg_db: Db) -> EffectHandler {
   fn(_name, args) {
     case args {
-      [StringVal(id)] ->
-        case cron_engine.cancel(engine, id) {
-          Ok(Nil) -> Ok(OkVal(NilVal))
-          Error(_) -> Ok(ErrorVal(StringVal("cancel_cron: failed to cancel")))
+      [StringVal(job_name)] ->
+        case string.starts_with(job_name, "hermes_") {
+          False -> Ok(ErrorVal(StringVal("cancel_cron: can only cancel hermes_ jobs")))
+          True ->
+            case pg_cron.unschedule(pg_db, job_name:) {
+              Ok(_) -> Ok(OkVal(NilVal))
+              Error(pg_cron.CronError(msg)) ->
+                Ok(ErrorVal(StringVal("cancel_cron: " <> msg)))
+            }
         }
-      _ -> Ok(ErrorVal(StringVal("cancel_cron: expected 1 string arg (id)")))
+      _ -> Ok(ErrorVal(StringVal("cancel_cron: expected 1 string arg (job_name)")))
     }
   }
 }

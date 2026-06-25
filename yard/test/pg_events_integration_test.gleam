@@ -7,16 +7,18 @@ import gleeunit/should
 import gabsurd/client
 import yard/obs/events
 import yard/pg_events
+import testing
 
-const db_url = "postgresql://gabsurd:gabsurd@127.0.0.1:5432/gabsurd"
 
 pub fn main() {
   gleeunit.main()
 }
 
 fn with_db(test_fn: fn(client.Db) -> a) -> a {
-  let assert Ok(started) = client.start(db_url)
-  test_fn(started.data)
+  testing.with_pg_db(fn(db) {
+    testing.clean_durable(db)
+    test_fn(db)
+  })
 }
 
 fn make_run_id() -> String {
@@ -62,7 +64,7 @@ pub fn record_effect_replayed_test() {
       actor_hash: "abcd1234",
       run_id: make_run_id(),
       effect_name: "greet",
-      step_name: "0:greet",
+      step: 0,
       depth: 0,
     )
     should.be_ok(pg_events.record_event(db:, event:))
@@ -115,7 +117,7 @@ pub fn record_all_event_types_test() {
         actor_hash: "abcd1234",
         run_id: rid,
         effect_name: "greet",
-        step_name: "0:greet",
+        step: 0,
         depth: 0,
       ),
     )

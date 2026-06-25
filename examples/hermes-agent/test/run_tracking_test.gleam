@@ -3,23 +3,26 @@
 import ballast/value
 import gleam/list
 import gleeunit
+import gabsurd/client
 import hermes_agent/chute_exec
 import pig/workspace/schema
 import sqlight
 import yard/db
+import testing
+
 
 pub fn main() {
   gleeunit.main()
 }
 
 fn with_both_dbs(
-  test_fn: fn(sqlight.Connection, sqlight.Connection) -> a,
+  test_fn: fn(sqlight.Connection, client.Db) -> a,
 ) -> a {
   let assert Ok(workspace_conn) = sqlight.open("file::memory:")
   let assert Ok(Nil) = schema.init(workspace_conn)
-  let assert Ok(global_conn) = sqlight.open("file::memory:")
-  let assert Ok(Nil) = db.migrate(global_conn)
-  test_fn(workspace_conn, global_conn)
+  testing.with_clean_db(fn(global_conn) {
+    test_fn(workspace_conn, global_conn)
+  })
 }
 
 pub fn successful_run_recorded_test() {

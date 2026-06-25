@@ -24,6 +24,7 @@ import pig/workspace
 import simplifile
 import telega
 import telega_httpc
+import gabsurd/client
 import yard/db
 import yard/obs/dispatcher
 import yard/obs/session as yard_session
@@ -70,6 +71,11 @@ fn db_dir() -> String {
   |> result.unwrap("/tmp/hermes")
 }
 
+fn db_url() -> String {
+  envoy.get("DATABASE_URL")
+  |> result.unwrap("postgresql://gabsurd:gabsurd@127.0.0.1:5432/gabsurd")
+}
+
 // ═══════════════════════════════════════════════════════════════
 // Main
 // ═══════════════════════════════════════════════════════════════
@@ -98,8 +104,8 @@ pub fn main() {
   io.println("Obs: " <> yard_session_path)
 
   // ── 2. Database setup ───────────────────────────────────────
-  let global_path = dir <> "/hermes_global.db"
-  let assert Ok(global_conn) = db.open(global_path)
+  let assert Ok(started) = client.start(db_url())
+  let global_conn = started.data
   let assert Ok(Nil) = db.migrate(global_conn)
 
   let workspace_path = dir <> "/hermes_workspace.db"

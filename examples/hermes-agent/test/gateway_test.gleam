@@ -18,10 +18,12 @@ import hermes_agent/session
 import pig/ai/message
 import pig/ai/provider
 import pig/workspace
-import sqlight
+import gabsurd/client
 import telega/router
 import telega/testing/conversation
 import yard/db
+import testing
+
 
 pub fn main() {
   gleeunit.main()
@@ -41,30 +43,32 @@ fn echo_provider() -> provider.Provider {
             "Echo: " <> content,
             [],
             option.None,
+            option.None,
           )),
         )
       _ ->
-        Ok(provider.from_message(message.Assistant("Hello!", [], option.None)))
+        Ok(provider.from_message(message.Assistant("Hello!", [], option.None, option.None)))
     }
   }
 }
 
 fn with_gateway(
-  test_fn: fn(gateway.GatewayConfig, sqlight.Connection) -> a,
+  test_fn: fn(gateway.GatewayConfig, client.Db) -> a,
 ) -> a {
-  let assert Ok(global_conn) = sqlight.open("file::memory:")
-  let assert Ok(Nil) = db.migrate(global_conn)
-  let assert Ok(ws) = workspace.open("file::memory:")
-  let config =
-    gateway.GatewayConfig(
-      global_conn:,
-      workspace_conn: workspace.connection(ws),
-      session_config: session.simple_config(
-        echo_provider(),
-        "You are a test agent.",
-      ),
-    )
-  test_fn(config, global_conn)
+  testing.with_clean_db(fn(global_conn) {
+    testing.clean_registry(global_conn)
+    let assert Ok(ws) = workspace.open("file::memory:")
+    let config =
+      gateway.GatewayConfig(
+        global_conn:,
+        workspace_conn: workspace.connection(ws),
+        session_config: session.simple_config(
+          echo_provider(),
+          "You are a test agent.",
+        ),
+      )
+    test_fn(config, global_conn)
+  })
 }
 
 /// Telega's test default from_id — all conversation.send() messages use this.

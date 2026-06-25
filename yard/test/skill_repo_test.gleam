@@ -1,111 +1,94 @@
-//// Skill repository tests.
+//// Skill repository tests — PostgreSQL-backed skill CRUD.
+////
+//// Requires: docker container running with pg_schema.sql applied.
+//// Run with: bin/postgres.sh && cd yard && gleam test
 
 import gleam/list
 import gleam/string
-import gleeunit
-import sqlight
-import yard/db
+import gabsurd/client
 import yard/skill_repo
+import testing
 
-pub fn main() {
-  gleeunit.main()
-}
 
-fn with_db(test_fn: fn(sqlight.Connection) -> a) -> a {
-  let assert Ok(conn) = sqlight.open("file::memory:")
-  let assert Ok(Nil) = db.migrate(conn)
-  test_fn(conn)
+// ═══════════════════════════════════════════════════════════════
+// Helpers
+// ═══════════════════════════════════════════════════════════════
+
+fn with_db(test_fn: fn(client.Db) -> a) -> a {
+  testing.with_clean_db(test_fn)
 }
 
 // ═══════════════════════════════════════════════════════════════
-// register / lookup
+// Tests
 // ═══════════════════════════════════════════════════════════════
 
 pub fn register_creates_skill_test() {
-  with_db(fn(conn) {
-    let assert Ok(__id) =
-      skill_repo.register(
-        conn,
-        "health_check",
-        "Checks system health",
-        "pub fn main(env) { Ok(Nil) }",
-        [],
-      )
-    let assert Ok(skill) = skill_repo.lookup(conn, "health_check")
+  with_db(fn(db) {
+    let assert Ok(_id) = skill_repo.register(
+      db,
+      "health_check",
+      "Checks system health",
+      "pub fn main(env) { Ok(Nil) }",
+      [],
+    )
+    let assert Ok(skill) = skill_repo.lookup(db, "health_check")
     let assert "health_check" = skill.name
     let assert "Checks system health" = skill.description
+    let assert "active" = skill.status
   })
 }
 
-pub fn register_generates_id_and_hash_test() {
-  with_db(fn(conn) {
-    let assert Ok(id) =
-      skill_repo.register(
-        conn,
-        "my_skill",
-        "desc",
-        "pub fn main(env) { 1 }",
-        [],
-      )
-    // ID should be a UUID (36 chars with dashes)
-    let assert True = string.length(id) > 0
-    // Lookup should work
-    let assert Ok(skill) = skill_repo.lookup(conn, "my_skill")
-    let _id = skill.id
-  })
-}
-
-pub fn register_duplicate_name_returns_error_test() {
-  with_db(fn(conn) {
-    let assert Ok(_) =
-      skill_repo.register(conn, "my_skill", "desc1", "source1", [])
-    let assert Error(msg) =
-      skill_repo.register(conn, "my_skill", "desc2", "source2", [])
+pub fn register_fails_on_duplicate_name_test() {
+  with_db(fn(db) {
+    let assert Ok(_id1) = skill_repo.register(db, "my_skill", "desc1", "source1", [])
+    let assert Error(msg) = skill_repo.register(db, "my_skill", "desc2", "source2", [])
     let assert True = string.contains(msg, "already exists")
   })
 }
 
-pub fn lookup_missing_returns_error_test() {
-  with_db(fn(conn) {
-    let assert Error(msg) = skill_repo.lookup(conn, "nonexistent")
+pub fn lookup_returns_skill_by_name_test() {
+  with_db(fn(db) {
+    let assert Ok(_id) = skill_repo.register(db, "my_skill", "desc", "source", [])
+    let assert Ok(skill) = skill_repo.lookup(db, "my_skill")
+    let assert "my_skill" = skill.name
+  })
+}
+
+pub fn lookup_returns_error_on_missing_test() {
+  with_db(fn(db) {
+    let assert Error(msg) = skill_repo.lookup(db, "nonexistent")
     let assert True = string.contains(msg, "not found")
   })
 }
 
 pub fn list_all_returns_active_skills_test() {
-  with_db(fn(conn) {
-    let assert Ok(_) =
-      skill_repo.register(conn, "skill_a", "desc a", "source a", [])
-    let assert Ok(_) =
-      skill_repo.register(conn, "skill_b", "desc b", "source b", [])
-    let assert Ok(skills) = skill_repo.list_all(conn)
+  with_db(fn(db) {
+    let assert Ok(_id_a) = skill_repo.register(db, "skill_a", "desc a", "source a", [])
+    let assert Ok(_id_b) = skill_repo.register(db, "skill_b", "desc b", "source b", [])
+    let assert Ok(skills) = skill_repo.list_all(db)
     let assert 2 = list.length(skills)
   })
 }
 
-pub fn deactivate_removes_from_list_test() {
-  with_db(fn(conn) {
-    let assert Ok(id) =
-      skill_repo.register(conn, "my_skill", "desc", "source", [])
-    let assert Ok(_) =
-      skill_repo.register(conn, "other_skill", "desc", "source", [])
-    let assert Ok(Nil) = skill_repo.deactivate(conn, id)
-    let assert Ok(skills) = skill_repo.list_all(conn)
+pub fn deactivate_removes_from_list_all_test() {
+  with_db(fn(db) {
+    let assert Ok(id) = skill_repo.register(db, "my_skill", "desc", "source", [])
+    let assert Ok(_other_id) = skill_repo.register(db, "other_skill", "desc", "source", [])
+    let assert Ok(Nil) = skill_repo.deactivate(db, id)
+    let assert Ok(skills) = skill_repo.list_all(db)
     let assert 1 = list.length(skills)
-    let names = list.map(skills, fn(s) { s.name })
-    let assert True = list.contains(names, "other_skill")
+    let assert [skill, ..] = skills
+    let assert "other_skill" = skill.name
   })
 }
 
 pub fn register_with_tags_test() {
-  with_db(fn(conn) {
-    let assert Ok(_) =
-      skill_repo.register(conn, "tagged_skill", "desc", "source", [
-        "monitor",
-        "health",
-      ])
-    let assert Ok(skill) = skill_repo.lookup(conn, "tagged_skill")
-    let assert True = string.contains(skill.tags, "monitor")
-    let assert True = string.contains(skill.tags, "health")
+  with_db(fn(db) {
+    let assert Ok(_id) = skill_repo.register(db, "tagged_skill", "desc", "source", [
+      "monitoring",
+      "health",
+    ])
+    let assert Ok(skill) = skill_repo.lookup(db, "tagged_skill")
+    let assert "[\"monitoring\",\"health\"]" = skill.tags
   })
 }

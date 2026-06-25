@@ -17,6 +17,7 @@
 import gleam/dict
 import gleam/list
 import gleam/option
+import gabsurd/client.{type Db}
 import logging
 import sqlight
 import yard/db
@@ -104,11 +105,11 @@ pub fn resolve_one(
 /// (logged as a warning).
 pub fn resolve_for_agent(
   registry: HandlerRegistry,
-  conn: sqlight.Connection,
+  db: Db,
   agent_id: String,
   ctx: HandlerContext,
 ) -> Result(dict.Dict(String, EffectHandler), Nil) {
-  case db.get_agent_handlers(conn, agent_id) {
+  case db.get_agent_handlers(db, agent_id) {
     Ok(bindings) -> {
       let handlers =
         bindings

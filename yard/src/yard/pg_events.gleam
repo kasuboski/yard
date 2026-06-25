@@ -143,7 +143,7 @@ fn event_to_parts(event: HostEvent) -> #(String, json.Json, option.Option(Int)) 
       actor_hash:,
       run_id: _,
       effect_name:,
-      step_name:,
+      step:,
       depth:,
     ) -> #(
       "effect_replayed",
@@ -151,7 +151,7 @@ fn event_to_parts(event: HostEvent) -> #(String, json.Json, option.Option(Int)) 
         #("actor_path", json.string(actor_path)),
         #("actor_hash", json.string(actor_hash)),
         #("effect_name", json.string(effect_name)),
-        #("step_name", json.string(step_name)),
+        #("step", json.int(step)),
         #("depth", json.int(depth)),
       ]),
       option.None,

@@ -117,14 +117,19 @@ pub fn format_event(event: HostEvent) -> String {
       actor_hash: _,
       run_id: _,
       effect_name:,
-      step_name:,
+      step:,
       depth:,
     ) -> {
       let depth_str = case depth {
         0 -> ""
         _ -> " | depth: " <> int.to_string(depth)
       }
-      "[REPLAY] " <> effect_name <> " (" <> step_name <> ")" <> depth_str
+      "[REPLAY] "
+      <> effect_name
+      <> " (step "
+      <> int.to_string(step)
+      <> ")"
+      <> depth_str
     }
   }
 }

@@ -11,6 +11,10 @@
 //// Effect names are strings. Trigger types are strings. Handlers are a dict.
 //// Observability is baked in — you can't forget it.
 ////
+//// Durability is delegated to a `DurableStore` — the runner calls
+//// `store.lookup`/`store.record` and never touches checkpoints or codecs.
+//// Error policy: lookup is best-effort, record is a guarantee (ADR-0001).
+////
 //// Observability is a single callback: `emit: fn(HostEvent) -> Nil`.
 //// Production closes over a dispatcher Subject via `emit_to_dispatcher()`.
 //// Tests build their own (e.g. `fn(e) { process.send(subject, e) }`).
@@ -21,16 +25,13 @@ import ballast/value
 import chute/ast.{type Program}
 import gleam/dict.{type Dict}
 import gleam/erlang/process.{type Subject}
-import gleam/int
-import gleam/json
 import gleam/list
-import gleam/option.{type Option}
+import gleam/option
 import gleam/string
-import yard/checkpoint.{type Checkpointer}
+import yard/durability.{type DurableStore}
 import yard/obs/dispatcher.{type DispatcherMessage}
 import yard/obs/emit
 import yard/obs/events.{type HostEvent}
-import yard/value_codec
 
 // ═══════════════════════════════════════════════════════════════════════
 // Public Types
@@ -73,10 +74,10 @@ pub type RunConfig {
     trigger_source: String,
     /// 0 = outer actor, 1+ = inner chute (via chute_exec).
     depth: Int,
-    /// Optional checkpoint store for durable execution.
-    /// When Some, effect handler results are checkpointed and replayed on retry.
-    /// When None, the runner behaves exactly as before (no durability).
-    checkpointer: Option(Checkpointer),
+    /// Durable store for effect result replay/record.
+    /// Use `durability.none()` for non-durable runs (behaves as before).
+    /// Use `durability.from_checkpointer(cp)` for durable runs.
+    store: DurableStore,
   )
 }
 
@@ -166,43 +167,23 @@ fn handle_yield(
   start_time: Int,
   effects_count: Int,
 ) -> Result(value.Value, value.RuntimeError) {
-  // Build the checkpoint step name: "{index}:{effect_name}"
-  let step_name = int.to_string(effects_count) <> ":" <> effect_name
-
-  // Check for a stored checkpoint (replay path)
-  case config.checkpointer, checkpoint_lookup(config.checkpointer, step_name) {
-    option.Some(_), Ok(option.Some(json_str)) -> {
-      // Replay: decode stored value, feed to Ballast, skip handler
-      case value_codec.from_json(json_str) {
-        Ok(stored_value) -> {
-          config.emit(events.EffectReplayed(
-            actor_path: config.actor_path,
-            actor_hash: config.actor_hash,
-            run_id: config.run_id,
-            effect_name:,
-            step_name:,
-            depth: config.depth,
-          ))
-          let resumed = ballast.resume(cont, stored_value)
-          run_loop(config, resumed, start_time, effects_count + 1)
-        }
-        Error(_decode_err) -> {
-          // Checkpoint corrupt — fall through to fresh execution
-          run_fresh_yield(
-            config,
-            effect_name,
-            args,
-            cont,
-            gas_remaining,
-            start_time,
-            effects_count,
-            step_name,
-          )
-        }
-      }
+  // Replay path: lookup is best-effort (ADR-0001).
+  // Ok(Some(v)) → replay; Ok(None) or Error(_) → fresh execution.
+  case config.store.lookup(effects_count, effect_name) {
+    Ok(option.Some(stored_value)) -> {
+      config.emit(events.EffectReplayed(
+        actor_path: config.actor_path,
+        actor_hash: config.actor_hash,
+        run_id: config.run_id,
+        effect_name:,
+        step: effects_count,
+        depth: config.depth,
+      ))
+      let resumed = ballast.resume(cont, stored_value)
+      run_loop(config, resumed, start_time, effects_count + 1)
     }
-    _, _ -> {
-      // No checkpoint or no checkpointer — fresh execution
+    _ -> {
+      // No stored value, or store unreadable — fresh execution
       run_fresh_yield(
         config,
         effect_name,
@@ -211,13 +192,12 @@ fn handle_yield(
         gas_remaining,
         start_time,
         effects_count,
-        step_name,
       )
     }
   }
 }
 
-/// Run the handler fresh, checkpoint the result if a checkpointer is present.
+/// Run the handler fresh, then record the result (strict — ADR-0001).
 fn run_fresh_yield(
   config: RunConfig,
   effect_name: String,
@@ -226,7 +206,6 @@ fn run_fresh_yield(
   gas_remaining: Int,
   start_time: Int,
   effects_count: Int,
-  step_name: String,
 ) -> Result(value.Value, value.RuntimeError) {
   config.emit(events.EffectYielded(
     actor_path: config.actor_path,
@@ -276,36 +255,29 @@ fn run_fresh_yield(
             depth: config.depth,
           ))
 
-          // Checkpoint the result if a checkpointer is present
-          case config.checkpointer {
-            option.Some(cp) -> {
-              let json_value = value_codec.encode(handler_result)
-              let _ = checkpoint.save(cp, step_name, json.to_string(json_value))
-              Nil
+          // Record is a guarantee (ADR-0001): a store failure surfaces.
+          case config.store.record(effects_count, effect_name, handler_result) {
+            Ok(Nil) -> {
+              let resumed = ballast.resume(cont, handler_result)
+              run_loop(config, resumed, start_time, effects_count + 1)
             }
-            option.None -> Nil
+            Error(e) -> {
+              let error =
+                value.RuntimeError(
+                  "durability: " <> durability.error_to_string(e),
+                )
+              complete(
+                config,
+                start_time,
+                Error(error),
+                config.gas - gas_remaining,
+                effects_count + 1,
+              )
+            }
           }
-
-          let resumed = ballast.resume(cont, handler_result)
-          run_loop(config, resumed, start_time, effects_count + 1)
         }
       }
     }
-  }
-}
-
-/// Safely look up a checkpoint, returning None on any error.
-fn checkpoint_lookup(
-  cp: Option(Checkpointer),
-  step_name: String,
-) -> Result(Option(String), Nil) {
-  case cp {
-    option.Some(store) ->
-      case checkpoint.load(store, step_name) {
-        Ok(v) -> Ok(v)
-        Error(_) -> Error(Nil)
-      }
-    option.None -> Ok(option.None)
   }
 }
 

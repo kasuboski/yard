@@ -12,11 +12,10 @@ import gleam/string
 import gluid
 import gleeunit
 import gleeunit/should
-import gabsurd/client
 import yard/conversation
 import yard/pg_conversation
+import testing
 
-const db_url = "postgresql://gabsurd:gabsurd@127.0.0.1:5432/gabsurd"
 
 pub fn main() {
   gleeunit.main()
@@ -27,10 +26,11 @@ fn unique_conv_id() -> String {
 }
 
 fn with_store(test_fn: fn(conversation.ConversationStore) -> a) -> a {
-  let assert Ok(started) = client.start(db_url)
-  let db = started.data
-  let store = pg_conversation.from_db(db:)
-  test_fn(store)
+  testing.with_pg_db(fn(db) {
+    testing.clean_durable(db)
+    let store = pg_conversation.from_db(db:)
+    test_fn(store)
+  })
 }
 
 /// Parse JSON to a canonical dynamic for comparison.

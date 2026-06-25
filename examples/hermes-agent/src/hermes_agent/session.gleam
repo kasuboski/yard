@@ -14,6 +14,7 @@
 import gleam/io
 import gleam/list
 import gleam/option
+import gabsurd/client.{type Db}
 import gleam/otp/actor.{type StartError}
 import gleam/result
 import pig
@@ -49,7 +50,7 @@ pub type HermesSession {
   HermesSession(
     agent: pig.Agent,
     workspace_conn: sqlight.Connection,
-    global_conn: sqlight.Connection,
+    global_conn: Db,
     session_id: String,
     user_key: String,
     run_timeout_ms: Int,
@@ -86,7 +87,7 @@ pub fn simple_config(
 /// starts a Pig agent configured from SessionConfig, and returns the session.
 pub fn create(
   config: SessionConfig,
-  global_conn: sqlight.Connection,
+  global_conn: Db,
   workspace_conn: sqlight.Connection,
   user_key: String,
 ) -> Result(HermesSession, Nil) {
@@ -218,7 +219,7 @@ pub fn reset(
 /// If no session exists, creates a fresh one.
 pub fn load(
   config: SessionConfig,
-  global_conn: sqlight.Connection,
+  global_conn: Db,
   workspace_conn: sqlight.Connection,
   user_key: String,
 ) -> Result(HermesSession, Nil) {
@@ -302,7 +303,7 @@ fn messages_to_history(messages: List(db.ChatMessage)) -> List(Message) {
   list.map(messages, fn(msg) {
     case msg.role {
       "user" -> message.User(msg.content)
-      "assistant" -> message.Assistant(msg.content, [], option.None)
+      "assistant" -> message.Assistant(msg.content, [], option.None, option.None)
       "system" -> message.System(msg.content)
       _ -> message.User(msg.content)
     }
