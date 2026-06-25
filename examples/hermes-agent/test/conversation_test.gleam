@@ -75,7 +75,7 @@ fn with_workspace(test_fn: fn(sqlight.Connection) -> a) -> a {
 /// A fake provider that always returns a text response (no tool calls).
 fn text_provider(text: String) -> provider.Provider {
   fn(_messages, _tools) {
-    Ok(provider.from_message(message.Assistant(text, [], option.None)))
+    Ok(provider.from_message(message.Assistant(text, [], option.None, option.None)))
   }
 }
 
@@ -106,7 +106,7 @@ pub fn single_turn_no_tools_test() {
 
     let assert Ok(response) = result
     let content = case response {
-      message.Assistant(c, _, _) -> c
+      message.Assistant(c, _, _, _) -> c
       _ -> panic as "Expected Assistant message"
     }
     let assert True =
@@ -135,6 +135,7 @@ pub fn single_turn_with_tool_call_test() {
                   ),
                 ],
                 option.None,
+                option.None,
               )),
             )
           1 ->
@@ -143,11 +144,12 @@ pub fn single_turn_with_tool_call_test() {
                 "I wrote the file!",
                 [],
                 option.None,
+                option.None,
               )),
             )
           _ ->
             Ok(
-              provider.from_message(message.Assistant("Done", [], option.None)),
+              provider.from_message(message.Assistant("Done", [], option.None, option.None)),
             )
         }
       })
@@ -158,7 +160,7 @@ pub fn single_turn_with_tool_call_test() {
 
     let assert Ok(response) = result
     let content = case response {
-      message.Assistant(c, _, _) -> c
+      message.Assistant(c, _, _, _) -> c
       _ -> panic as "Expected Assistant message"
     }
     let assert True =
@@ -184,7 +186,7 @@ pub fn multi_turn_preserves_history_test() {
           0 -> "Turn 1: I see you said something."
           _ -> "Turn 2: Continuing conversation."
         }
-        Ok(provider.from_message(message.Assistant(text, [], option.None)))
+        Ok(provider.from_message(message.Assistant(text, [], option.None, option.None)))
       })
       |> pig.with_system_prompt("You are a test agent.")
       |> pig.with_tool(chute_tool)
@@ -192,12 +194,12 @@ pub fn multi_turn_preserves_history_test() {
     let assert Ok(agent) = pig.start(config)
 
     // Turn 1
-    let assert Ok(message.Assistant(c1, _, _)) =
+    let assert Ok(message.Assistant(c1, _, _, _)) =
       pig.run_with_timeout(agent, "Hello", 5000)
     let assert True = string.contains(c1, "Turn 1")
 
     // Turn 2
-    let assert Ok(message.Assistant(c2, _, _)) =
+    let assert Ok(message.Assistant(c2, _, _, _)) =
       pig.run_with_timeout(agent, "Continue", 5000)
     let assert True = string.contains(c2, "Turn 2")
 
@@ -226,6 +228,7 @@ pub fn multi_turn_with_tools_across_turns_test() {
                   ),
                 ],
                 option.None,
+                option.None,
               )),
             )
           1 ->
@@ -233,6 +236,7 @@ pub fn multi_turn_with_tools_across_turns_test() {
               provider.from_message(message.Assistant(
                 "File written.",
                 [],
+                option.None,
                 option.None,
               )),
             )
@@ -247,6 +251,7 @@ pub fn multi_turn_with_tools_across_turns_test() {
                   ),
                 ],
                 option.None,
+                option.None,
               )),
             )
           3 ->
@@ -255,11 +260,12 @@ pub fn multi_turn_with_tools_across_turns_test() {
                 "The file contains: secret value",
                 [],
                 option.None,
+                option.None,
               )),
             )
           _ ->
             Ok(
-              provider.from_message(message.Assistant("Done", [], option.None)),
+              provider.from_message(message.Assistant("Done", [], option.None, option.None)),
             )
         }
       })
@@ -269,13 +275,13 @@ pub fn multi_turn_with_tools_across_turns_test() {
     let assert Ok(agent) = pig.start(config)
 
     // Turn 1: write
-    let assert Ok(message.Assistant(c1, _, _)) =
+    let assert Ok(message.Assistant(c1, _, _, _)) =
       pig.run_with_timeout(agent, "Write secret to file", 5000)
     let assert True =
       string.contains(c1, "written") || string.contains(c1, "File")
 
     // Turn 2: read — proves VFS persists across turns
-    let assert Ok(message.Assistant(c2, _, _)) =
+    let assert Ok(message.Assistant(c2, _, _, _)) =
       pig.run_with_timeout(agent, "Read the file back", 5000)
     let assert True = string.contains(c2, "secret value")
 
@@ -304,6 +310,7 @@ pub fn kv_persists_across_turns_test() {
                   ),
                 ],
                 option.None,
+                option.None,
               )),
             )
           1 ->
@@ -311,6 +318,7 @@ pub fn kv_persists_across_turns_test() {
               provider.from_message(message.Assistant(
                 "Stored!",
                 [],
+                option.None,
                 option.None,
               )),
             )
@@ -325,6 +333,7 @@ pub fn kv_persists_across_turns_test() {
                   ),
                 ],
                 option.None,
+                option.None,
               )),
             )
           3 ->
@@ -333,11 +342,12 @@ pub fn kv_persists_across_turns_test() {
                 "The name is: Alice",
                 [],
                 option.None,
+                option.None,
               )),
             )
           _ ->
             Ok(
-              provider.from_message(message.Assistant("Done", [], option.None)),
+              provider.from_message(message.Assistant("Done", [], option.None, option.None)),
             )
         }
       })
@@ -347,11 +357,11 @@ pub fn kv_persists_across_turns_test() {
     let assert Ok(agent) = pig.start(config)
 
     // Turn 1: store
-    let assert Ok(message.Assistant(_, _, _)) =
+    let assert Ok(message.Assistant(_, _, _, _)) =
       pig.run_with_timeout(agent, "Remember my name is Alice", 5000)
 
     // Turn 2: recall — proves KV persists across turns
-    let assert Ok(message.Assistant(c2, _, _)) =
+    let assert Ok(message.Assistant(c2, _, _, _)) =
       pig.run_with_timeout(agent, "What is my name?", 5000)
     let assert True = string.contains(c2, "Alice")
 
@@ -380,6 +390,7 @@ pub fn error_recovery_across_turns_test() {
                   ),
                 ],
                 option.None,
+                option.None,
               )),
             )
           1 ->
@@ -387,6 +398,7 @@ pub fn error_recovery_across_turns_test() {
               provider.from_message(message.Assistant(
                 "That had an error.",
                 [],
+                option.None,
                 option.None,
               )),
             )
@@ -401,6 +413,7 @@ pub fn error_recovery_across_turns_test() {
                   ),
                 ],
                 option.None,
+                option.None,
               )),
             )
           3 ->
@@ -409,11 +422,12 @@ pub fn error_recovery_across_turns_test() {
                 "This time it worked!",
                 [],
                 option.None,
+                option.None,
               )),
             )
           _ ->
             Ok(
-              provider.from_message(message.Assistant("Done", [], option.None)),
+              provider.from_message(message.Assistant("Done", [], option.None, option.None)),
             )
         }
       })
@@ -423,12 +437,12 @@ pub fn error_recovery_across_turns_test() {
     let assert Ok(agent) = pig.start(config)
 
     // Turn 1: error
-    let assert Ok(message.Assistant(c1, _, _)) =
+    let assert Ok(message.Assistant(c1, _, _, _)) =
       pig.run_with_timeout(agent, "Run a bad program", 5000)
     let assert True = string.contains(c1, "error")
 
     // Turn 2: success — proves recovery
-    let assert Ok(message.Assistant(c2, _, _)) =
+    let assert Ok(message.Assistant(c2, _, _, _)) =
       pig.run_with_timeout(agent, "Now run a good one", 5000)
     let assert True =
       string.contains(c2, "worked") || string.contains(c2, "success")

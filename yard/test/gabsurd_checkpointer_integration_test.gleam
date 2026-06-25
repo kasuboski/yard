@@ -15,8 +15,8 @@ import gabsurd/queue
 import gabsurd/task
 import yard/gabsurd_checkpointer
 import yard/checkpoint
+import testing
 
-const db_url = "postgresql://gabsurd:gabsurd@127.0.0.1:5432/gabsurd"
 
 pub fn main() {
   gleeunit.main()
@@ -24,9 +24,8 @@ pub fn main() {
 
 fn with_setup(test_fn: fn(client.Db, String, task.Claim) -> a) -> a {
   let queue_name = "yard_cp_test_" <> int.to_string(client.unique_integer())
-  let assert Ok(started) = client.start(db_url)
-  let db = started.data
-  let assert Ok(Nil) = queue.create(db, queue_name)
+  testing.with_pg_db(fn(db) {
+    let assert Ok(Nil) = queue.create(db, queue_name)
 
   // Spawn a task and claim it so we have a valid run_id
   let assert Ok(_spawned) =
@@ -42,10 +41,9 @@ fn with_setup(test_fn: fn(client.Db, String, task.Claim) -> a) -> a {
 
   let result = test_fn(db, queue_name, claim)
 
-  let _ = queue.drop(db, queue_name)
-  // Don't kill the pool — it dies when the test VM exits.
-  // Killing it causes "no connection available" in concurrent tests.
-  result
+    let _ = queue.drop(db, queue_name)
+    result
+  })
 }
 
 pub fn save_then_load_checkpoint_test() {

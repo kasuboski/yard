@@ -15,7 +15,10 @@ import pig/ai/provider
 import pig/workspace
 import pig/workspace/kv
 import sqlight
+import gabsurd/client
+
 import yard/db
+import testing
 
 pub fn main() {
   gleeunit.main()
@@ -29,17 +32,17 @@ fn test_config(provider: provider.Provider) -> session.SessionConfig {
   session.simple_config(provider, "You are a test agent.")
 }
 
-fn with_dbs(test_fn: fn(sqlight.Connection, sqlight.Connection) -> a) -> a {
-  let assert Ok(global_conn) = sqlight.open("file::memory:")
-  let assert Ok(Nil) = db.migrate(global_conn)
-  let assert Ok(ws) = workspace.open("file::memory:")
-  test_fn(global_conn, workspace.connection(ws))
+fn with_dbs(test_fn: fn(client.Db, sqlight.Connection) -> a) -> a {
+  testing.with_clean_db(fn(global_conn) {
+    let assert Ok(ws) = workspace.open("file::memory:")
+    test_fn(global_conn, workspace.connection(ws))
+  })
 }
 
 /// A fake provider that always returns a fixed text response.
 fn fixed_provider(text: String) -> provider.Provider {
   fn(_messages, _tools) {
-    Ok(provider.from_message(message.Assistant(text, [], option.None)))
+    Ok(provider.from_message(message.Assistant(text, [], option.None, option.None)))
   }
 }
 
@@ -48,7 +51,7 @@ fn counting_provider(text: String, counter: Ref(Int)) -> provider.Provider {
   fn(_messages, _tools) {
     let n = counter.get()
     counter.set(n + 1)
-    Ok(provider.from_message(message.Assistant(text, [], option.None)))
+    Ok(provider.from_message(message.Assistant(text, [], option.None, option.None)))
   }
 }
 

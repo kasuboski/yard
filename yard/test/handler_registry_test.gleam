@@ -15,10 +15,12 @@ import gleam/list
 import gleam/option
 import gleam/string
 import gleeunit
+import gabsurd/client
 import sqlight
 import yard/db
 import yard/handler_registry
 import yard/runner
+import testing
 
 pub fn main() {
   gleeunit.main()
@@ -28,10 +30,8 @@ pub fn main() {
 // Helpers
 // ═══════════════════════════════════════════════════════════════
 
-fn with_db(test_fn: fn(sqlight.Connection) -> a) -> a {
-  let assert Ok(conn) = sqlight.open("file::memory:")
-  let assert Ok(Nil) = db.migrate(conn)
-  test_fn(conn)
+fn with_db(test_fn: fn(client.Db) -> a) -> a {
+  testing.with_clean_db(test_fn)
 }
 
 /// A simple handler that echoes back the effect name + args joined.
@@ -64,176 +64,146 @@ fn workspace_probe_builder(
 }
 
 // ═══════════════════════════════════════════════════════════════
-// 1. Registry basics
+// Basic registration and resolution
 // ═══════════════════════════════════════════════════════════════
 
 pub fn new_registry_is_empty_test() {
   let reg = handler_registry.new()
-  let assert 0 = dict.size(reg.bindings)
+  let assert Error(Nil) =
+    handler_registry.resolve_one(reg, "nonexistent", handler_registry.make_context(
+      option.None,
+      fn(_) { Nil },
+    ))
 }
 
-pub fn register_adds_builder_test() {
+pub fn resolve_one_returns_handler_test() {
   let reg =
-    handler_registry.new()
-    |> handler_registry.register("echo", echo_builder)
-  let assert 1 = dict.size(reg.bindings)
+    handler_registry.register(handler_registry.new(), "echo", echo_builder)
+  let ctx = handler_registry.make_context(option.None, fn(_) { Nil })
+  let assert Ok(handler) = handler_registry.resolve_one(reg, "echo", ctx)
+
+  let assert Ok(value.OkVal(value.StringVal("foo arg1 arg2"))) =
+    handler("foo", [value.StringVal("arg1"), value.StringVal("arg2")])
 }
 
-pub fn register_multiple_builders_test() {
-  let reg =
-    handler_registry.new()
-    |> handler_registry.register("echo", echo_builder)
-    |> handler_registry.register("ws_probe", workspace_probe_builder)
-  let assert 2 = dict.size(reg.bindings)
-}
-
-pub fn resolve_unknown_handler_returns_error_test() {
+pub fn resolve_one_returns_error_for_unknown_handler_test() {
   let reg = handler_registry.new()
+  let ctx = handler_registry.make_context(option.None, fn(_) { Nil })
+  let assert Error(Nil) = handler_registry.resolve_one(reg, "unknown", ctx)
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Context passthrough
+// ═══════════════════════════════════════════════════════════════
+
+pub fn handler_receives_context_without_workspace_test() {
+  let reg =
+    handler_registry.register(
+      handler_registry.new(),
+      "workspace_probe",
+      workspace_probe_builder,
+    )
+  let ctx = handler_registry.make_context(option.None, fn(_) { Nil })
+  let assert Ok(handler) =
+    handler_registry.resolve_one(reg, "workspace_probe", ctx)
+
+  let assert Ok(value.OkVal(value.StringVal("no_workspace"))) = handler("x", [])
+}
+
+pub fn handler_receives_context_with_workspace_test() {
+  let reg =
+    handler_registry.register(
+      handler_registry.new(),
+      "workspace_probe",
+      workspace_probe_builder,
+    )
+  // Create a real SQLite connection for workspace
+  let assert Ok(ws_conn) = sqlight.open("file::memory:")
   let ctx =
-    handler_registry.make_context(workspace_conn: option.None, emit: fn(_) {
-      Nil
-    })
-  let result = handler_registry.resolve_one(reg, "nonexistent", ctx)
-  let assert Error(_) = result
+    handler_registry.make_context(option.Some(ws_conn), fn(_) { Nil })
+  let assert Ok(handler) =
+    handler_registry.resolve_one(reg, "workspace_probe", ctx)
+
+  let assert Ok(value.OkVal(value.StringVal("has_workspace"))) = handler("x", [])
 }
 
 // ═══════════════════════════════════════════════════════════════
-// 2. Resolve handlers for an agent
+// Per-agent resolution from agent_handlers table
 // ═══════════════════════════════════════════════════════════════
 
-pub fn resolve_agent_handlers_from_db_test() {
-  with_db(fn(conn) {
-    let assert Ok(agent_id) =
-      db.insert_agent(
-        conn,
-        "test-agent",
-        "An agent",
-        "pub fn main(env) { 42 }",
-        "active",
-      )
-
-    let assert Ok(Nil) = db.insert_agent_handler(conn, agent_id, "echo", "echo")
-    let assert Ok(Nil) =
-      db.insert_agent_handler(conn, agent_id, "greet", "echo")
-
+pub fn resolve_for_agent_loads_bindings_from_db_test() {
+  with_db(fn(db) {
     let reg =
-      handler_registry.new()
-      |> handler_registry.register("echo", echo_builder)
+      handler_registry.register(handler_registry.new(), "echo", echo_builder)
 
-    let ctx =
-      handler_registry.make_context(workspace_conn: option.None, emit: fn(_) {
-        Nil
-      })
-
-    let assert Ok(handlers) =
-      handler_registry.resolve_for_agent(reg, conn, agent_id, ctx)
-    let assert 2 = dict.size(handlers)
-
-    // Test the echo handler
-    let assert Ok(h) = dict.get(handlers, "echo")
-    let assert Ok(value.OkVal(value.StringVal(r1))) =
-      h("echo", [value.StringVal("hello")])
-    let assert "echo hello" = r1
-
-    // Test the greet handler (same builder, different effect name)
-    let assert Ok(h2) = dict.get(handlers, "greet")
-    let assert Ok(value.OkVal(value.StringVal(r2))) =
-      h2("greet", [value.StringVal("world")])
-    let assert "greet world" = r2
-  })
-}
-
-pub fn resolve_agent_with_missing_builder_skips_test() {
-  with_db(fn(conn) {
+    // Create an agent with handler bindings
     let assert Ok(agent_id) =
-      db.insert_agent(
-        conn,
-        "partial-agent",
-        "An agent",
-        "pub fn main(env) { 42 }",
-        "active",
-      )
-
-    let assert Ok(Nil) = db.insert_agent_handler(conn, agent_id, "echo", "echo")
+      db.insert_agent(db, "test_agent", "test", "source", "active")
     let assert Ok(Nil) =
-      db.insert_agent_handler(conn, agent_id, "fetch", "http_get")
+      db.insert_agent_handler(db, agent_id, "echo", "echo")
 
-    let reg =
-      handler_registry.new()
-      |> handler_registry.register("echo", echo_builder)
-
-    let ctx =
-      handler_registry.make_context(workspace_conn: option.None, emit: fn(_) {
-        Nil
-      })
-
+    let ctx = handler_registry.make_context(option.None, fn(_) { Nil })
     let assert Ok(handlers) =
-      handler_registry.resolve_for_agent(reg, conn, agent_id, ctx)
-    // Only echo resolved; fetch/http_get skipped
+      handler_registry.resolve_for_agent(reg, db, agent_id, ctx)
+
     let assert 1 = dict.size(handlers)
+    let assert Ok(echo_handler) = dict.get(handlers, "echo")
+    let assert Ok(value.OkVal(value.StringVal("echo x y"))) =
+      echo_handler("echo", [value.StringVal("x"), value.StringVal("y")])
   })
 }
 
-pub fn resolve_agent_with_no_handlers_returns_empty_test() {
-  with_db(fn(conn) {
-    let assert Ok(agent_id) =
-      db.insert_agent(
-        conn,
-        "bare-agent",
-        "No handlers",
-        "pub fn main(env) { 42 }",
-        "active",
-      )
-
+pub fn resolve_for_agent_multiple_bindings_test() {
+  with_db(fn(db) {
     let reg =
-      handler_registry.new()
-      |> handler_registry.register("echo", echo_builder)
+      handler_registry.register(handler_registry.new(), "echo", echo_builder)
 
-    let ctx =
-      handler_registry.make_context(workspace_conn: option.None, emit: fn(_) {
-        Nil
-      })
+    let assert Ok(agent_id) =
+      db.insert_agent(db, "test_agent", "test", "source", "active")
+    let assert Ok(Nil) =
+      db.insert_agent_handler(db, agent_id, "echo", "echo")
+    let assert Ok(Nil) =
+      db.insert_agent_handler(db, agent_id, "greet", "echo")
 
+    let ctx = handler_registry.make_context(option.None, fn(_) { Nil })
     let assert Ok(handlers) =
-      handler_registry.resolve_for_agent(reg, conn, agent_id, ctx)
+      handler_registry.resolve_for_agent(reg, db, agent_id, ctx)
+
+    let assert 2 = dict.size(handlers)
+    let assert Ok(_) = dict.get(handlers, "echo")
+    let assert Ok(_) = dict.get(handlers, "greet")
+  })
+}
+
+pub fn resolve_for_agent_skips_unknown_handlers_test() {
+  with_db(fn(db) {
+    let reg = handler_registry.new()
+
+    let assert Ok(agent_id) =
+      db.insert_agent(db, "test_agent", "test", "source", "active")
+    let assert Ok(Nil) =
+      db.insert_agent_handler(db, agent_id, "fetch", "http_get")
+
+    let ctx = handler_registry.make_context(option.None, fn(_) { Nil })
+    let assert Ok(handlers) =
+      handler_registry.resolve_for_agent(reg, db, agent_id, ctx)
+
+    // Unknown handler should be skipped
     let assert 0 = dict.size(handlers)
   })
 }
 
-// ═══════════════════════════════════════════════════════════════
-// 3. Handler context
-// ═══════════════════════════════════════════════════════════════
+pub fn resolve_for_agent_empty_bindings_test() {
+  with_db(fn(db) {
+    let reg = handler_registry.new()
 
-pub fn handler_receives_workspace_context_test() {
-  // Provide a workspace connection
-  let assert Ok(ws_conn) = sqlight.open("file::memory:")
+    let assert Ok(agent_id) =
+      db.insert_agent(db, "test_agent", "test", "source", "active")
 
-  let reg =
-    handler_registry.new()
-    |> handler_registry.register("ws_probe", workspace_probe_builder)
+    let ctx = handler_registry.make_context(option.None, fn(_) { Nil })
+    let assert Ok(handlers) =
+      handler_registry.resolve_for_agent(reg, db, agent_id, ctx)
 
-  let ctx =
-    handler_registry.make_context(
-      workspace_conn: option.Some(ws_conn),
-      emit: fn(_) { Nil },
-    )
-
-  let assert Ok(built) = handler_registry.resolve_one(reg, "ws_probe", ctx)
-  let assert Ok(value.OkVal(value.StringVal("has_workspace"))) =
-    built("ws_probe", [])
-}
-
-pub fn handler_receives_no_workspace_context_test() {
-  let reg =
-    handler_registry.new()
-    |> handler_registry.register("ws_probe", workspace_probe_builder)
-
-  let ctx =
-    handler_registry.make_context(workspace_conn: option.None, emit: fn(_) {
-      Nil
-    })
-
-  let assert Ok(built) = handler_registry.resolve_one(reg, "ws_probe", ctx)
-  let assert Ok(value.OkVal(value.StringVal("no_workspace"))) =
-    built("ws_probe", [])
+    let assert 0 = dict.size(handlers)
+  })
 }

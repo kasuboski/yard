@@ -13,8 +13,8 @@ import gleeunit/should
 import gabsurd/client
 import gabsurd/queue
 import yard/ui/server
+import testing
 
-const db_url = "postgresql://gabsurd:gabsurd@127.0.0.1:5432/gabsurd"
 
 pub fn main() {
   gleeunit.main()
@@ -23,9 +23,8 @@ pub fn main() {
 fn with_server(test_fn: fn(Int) -> a) -> a {
   let port = 8390 + int.absolute_value(client.unique_integer()) % 100
   let queue_name = "ui_test_" <> int.to_string(client.unique_integer())
-  let assert Ok(started) = client.start(db_url)
-  let db = started.data
-  let assert Ok(Nil) = queue.create(db, queue_name)
+  testing.with_pg_db(fn(db) {
+    let assert Ok(Nil) = queue.create(db, queue_name)
 
   // Start the UI server — ignore failures (the server may already be bound)
   let _ = server.start(db:, queue_name:, port:)
@@ -34,8 +33,9 @@ fn with_server(test_fn: fn(Int) -> a) -> a {
 
   let result = test_fn(port)
 
-  let _ = queue.drop(db, queue_name)
-  result
+    let _ = queue.drop(db, queue_name)
+    result
+  })
 }
 
 @external(erlang, "timer", "sleep")

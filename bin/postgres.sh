@@ -27,7 +27,8 @@ else
     -e POSTGRES_DB="${DB_NAME}" \
     -p "${DB_PORT}:5432" \
     "${IMAGE}" \
-    -c max_connections=500
+    -c max_connections=500 \
+    -c idle_session_timeout=5000
 
   echo "⏳ Waiting for Postgres to be ready..."
   for i in $(seq 1 30); do
@@ -49,6 +50,12 @@ docker exec -i "${CONTAINER_NAME}" psql -U "${DB_USER}" -d "${DB_NAME}" < "${PRO
 
 echo "📋 Applying Yard durable schema..."
 docker exec -i "${CONTAINER_NAME}" psql -U "${DB_USER}" -d "${DB_NAME}" < "${PROJECT_ROOT}/yard/src/yard/sql/durable_schema.sql"
+
+echo "📋 Applying Yard registry schema..."
+docker exec -i "${CONTAINER_NAME}" psql -U "${DB_USER}" -d "${DB_NAME}" < "${PROJECT_ROOT}/yard/src/yard/sql/pg_schema.sql"
+
+echo "📋 Setting idle session timeout (reaps leaked test connections)..."
+docker exec -i "${CONTAINER_NAME}" psql -U "${DB_USER}" -d "${DB_NAME}" -c "ALTER DATABASE ${DB_NAME} SET idle_session_timeout = '5s';" 2>/dev/null || true
 
 echo ""
 echo "✅ Database ready: postgresql://${DB_USER}:${DB_PASS}@127.0.0.1:${DB_PORT}/${DB_NAME}"

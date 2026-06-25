@@ -6,7 +6,7 @@
 import gleam/json
 import gleam/list
 import gleam/option
-import sqlight
+import gabsurd/client.{type Db}
 import yard/db
 
 // ═══════════════════════════════════════════════════════════════
@@ -47,14 +47,14 @@ fn db_skill_to_skill(s: db.Skill) -> Skill {
 /// Register a new skill. Returns the generated ID.
 /// Fails if a skill with the same name already exists.
 pub fn register(
-  conn: sqlight.Connection,
+  db: Db,
   name: String,
   description: String,
   source: String,
   tags: List(String),
 ) -> Result(String, String) {
   // Check for duplicate name
-  case db.get_skill_by_name(conn, name) {
+  case db.get_skill_by_name(db, name) {
     Ok(option.Some(_)) ->
       Error("Skill with name '" <> name <> "' already exists")
     Ok(option.None) -> {
@@ -64,7 +64,7 @@ pub fn register(
         |> json.array(fn(x) { x })
         |> json.to_string
 
-      case db.insert_skill(conn, name, description, source, tags_json) {
+      case db.insert_skill(db, name, description, source, tags_json) {
         Ok(id) -> Ok(id)
         Error(_) -> Error("Failed to insert skill")
       }
@@ -74,8 +74,8 @@ pub fn register(
 }
 
 /// Look up a skill by name. Returns the full skill with source.
-pub fn lookup(conn: sqlight.Connection, name: String) -> Result(Skill, String) {
-  case db.get_skill_by_name(conn, name) {
+pub fn lookup(db: Db, name: String) -> Result(Skill, String) {
+  case db.get_skill_by_name(db, name) {
     Ok(option.Some(skill)) -> Ok(db_skill_to_skill(skill))
     Ok(option.None) -> Error("Skill '" <> name <> "' not found")
     Error(_) -> Error("Database error looking up skill")
@@ -83,16 +83,16 @@ pub fn lookup(conn: sqlight.Connection, name: String) -> Result(Skill, String) {
 }
 
 /// List all active skills.
-pub fn list_all(conn: sqlight.Connection) -> Result(List(Skill), String) {
-  case db.list_skills(conn) {
+pub fn list_all(db: Db) -> Result(List(Skill), String) {
+  case db.list_skills(db) {
     Ok(skills) -> Ok(list.map(skills, db_skill_to_skill))
     Error(_) -> Error("Database error listing skills")
   }
 }
 
 /// Deactivate a skill by ID.
-pub fn deactivate(conn: sqlight.Connection, id: String) -> Result(Nil, String) {
-  case db.deactivate_skill(conn, id) {
+pub fn deactivate(db: Db, id: String) -> Result(Nil, String) {
+  case db.deactivate_skill(db, id) {
     Ok(Nil) -> Ok(Nil)
     Error(_) -> Error("Database error deactivating skill")
   }

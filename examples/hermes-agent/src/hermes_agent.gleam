@@ -33,6 +33,7 @@ import envoy
 import gleam/erlang/process
 import gleam/io
 import gleam/result
+import gabsurd/client
 import pig/ai/openai
 import pig/workspace
 import simplifile
@@ -68,6 +69,11 @@ fn openai_model() -> String {
 fn db_dir() -> String {
   envoy.get("HERMES_DB_DIR")
   |> result.unwrap("/tmp/hermes")
+}
+
+fn db_url() -> String {
+  envoy.get("DATABASE_URL")
+  |> result.unwrap("postgresql://gabsurd:gabsurd@127.0.0.1:5432/gabsurd")
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -110,8 +116,8 @@ pub fn main() {
   io.println("Yard observability started")
 
   // ── 3. Database setup ───────────────────────────────────────
-  let global_path = dir <> "/hermes_global.db"
-  let assert Ok(global_conn) = db.open(global_path)
+  let assert Ok(started) = client.start(db_url())
+  let global_conn = started.data
   let assert Ok(Nil) = db.migrate(global_conn)
 
   let assert Ok(ws) = workspace.open(workspace_path)
@@ -168,6 +174,6 @@ pub fn main() {
   process.send(yard_dispatcher, dispatcher.Stop)
   io.println("")
   io.println("Observability: " <> yard_session_path)
-  io.println("Messages:      " <> global_path)
+  io.println("Messages:      " <> db_url())
   io.println("Done.")
 }

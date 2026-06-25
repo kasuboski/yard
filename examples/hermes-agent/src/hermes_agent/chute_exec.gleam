@@ -12,6 +12,7 @@ import gleam/int
 import gleam/json
 import gleam/list
 import gleam/option
+import gabsurd/client.{type Db}
 import gleam/result
 import gleam/string
 import gluid
@@ -39,7 +40,7 @@ pub type ChuteExecConfig {
     emit: fn(HostEvent) -> Nil,
     /// Optional global DB connection for run tracking.
     /// If present, each run is recorded in the runs table.
-    global_conn: option.Option(sqlight.Connection),
+    global_conn: option.Option(Db),
     /// Optional agent ID for run tracking.
     agent_id: option.Option(String),
   )
@@ -66,7 +67,7 @@ pub fn silent_config(conn: sqlight.Connection) -> ChuteExecConfig {
 /// Add run tracking to a config.
 pub fn with_run_tracking(
   cfg: ChuteExecConfig,
-  global_conn: sqlight.Connection,
+  global_conn: Db,
   agent_id: String,
 ) -> ChuteExecConfig {
   ChuteExecConfig(
@@ -163,6 +164,7 @@ pub fn run(
           trigger_source: "chute_exec",
           depth: 0,
           store: durability.none(),
+        )
 
       case runner.run(run_config) {
         Ok(result) -> {
@@ -228,7 +230,7 @@ pub fn run(
 
 /// Complete a tracked run in the global DB (if tracking is enabled).
 fn complete_tracked_run(
-  global_conn: option.Option(sqlight.Connection),
+  global_conn: option.Option(Db),
   run_id: String,
   status: String,
   error_message: option.Option(String),

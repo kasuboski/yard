@@ -1,0 +1,51 @@
+//// Shared test helpers for hermes-agent PostgreSQL-backed tests.
+////
+//// Each test gets its own connection pool, runs against TRUNCATEd tables,
+//// then closes the pool to free connections.
+
+import gleam/erlang/process
+import gabsurd/client.{type Db}
+
+const db_url = "postgresql://gabsurd:gabsurd@127.0.0.1:5432/gabsurd"
+
+/// Run a test with a clean DB. Creates a pool, TRUNCATEs registry tables,
+/// runs the test, then closes the pool to free connections.
+pub fn with_clean_db(test_fn: fn(Db) -> a) -> a {
+  let assert Ok(started) = client.start(db_url)
+  let db = started.data
+  clean_registry(db)
+  let result = test_fn(db)
+  process.send_exit(started.pid)
+  result
+}
+
+/// Check if Postgres is reachable without starting a pool.
+/// Used by cron tests that skip gracefully when no DB is available.
+pub fn try_db() -> Result(Db, Nil) {
+  case client.start(db_url) {
+    Ok(started) -> {
+      let db = started.data
+      case client.exec(db, #("SELECT 1", [])) {
+        Ok(_) -> Ok(db)
+        Error(_) -> {
+          process.send_exit(started.pid)
+          Error(Nil)
+        }
+      }
+    }
+    Error(_) -> Error(Nil)
+  }
+}
+
+/// Truncate registry tables for a clean test state.
+pub fn clean_registry(db: Db) -> Nil {
+  let _ =
+    client.exec(
+      db,
+      #(
+        "TRUNCATE TABLE agent_handlers, agents, skills, deployments, runs, chat_messages, chat_sessions, providers RESTART IDENTITY CASCADE",
+        [],
+      ),
+    )
+  Nil
+}

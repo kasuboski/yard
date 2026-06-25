@@ -26,8 +26,8 @@ import yard/loader
 import yard/obs/events.{type HostEvent, EffectHandled, EffectReplayed}
 import yard/runner.{type EffectHandler, type RunConfig, RunConfig}
 import yard/value_codec
+import testing
 
-const db_url = "postgresql://gabsurd:gabsurd@127.0.0.1:5432/gabsurd"
 
 pub fn main() {
   gleeunit.main()
@@ -35,12 +35,12 @@ pub fn main() {
 
 fn with_queue(test_fn: fn(client.Db, String) -> a) -> a {
   let queue_name = "yard_runner_test_" <> int.to_string(client.unique_integer())
-  let assert Ok(started) = client.start(db_url)
-  let db = started.data
-  let assert Ok(Nil) = queue.create(db, queue_name)
-  let result = test_fn(db, queue_name)
-  let _ = queue.drop(db, queue_name)
-  result
+  testing.with_pg_db(fn(db) {
+    let assert Ok(Nil) = queue.create(db, queue_name)
+    let result = test_fn(db, queue_name)
+    let _ = queue.drop(db, queue_name)
+    result
+  })
 }
 
 /// Helper: spawn a task, claim it, and build a RunConfig with a gabsurd checkpointer.

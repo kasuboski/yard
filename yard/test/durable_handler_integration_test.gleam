@@ -27,8 +27,8 @@ import yard/gabsurd_checkpointer
 import yard/obs/events
 import yard/runner
 import yard/value_codec
+import testing
 
-const db_url = "postgresql://gabsurd:gabsurd@127.0.0.1:5432/gabsurd"
 
 pub fn main() {
   gleeunit.main()
@@ -49,9 +49,8 @@ fn with_queue_and_task(
   ) -> a,
 ) -> a {
   let queue_name = "yard_handler_test_" <> int.to_string(client.unique_integer())
-  let assert Ok(started) = client.start(db_url)
-  let db = started.data
-  let assert Ok(Nil) = queue.create(db, queue_name)
+  testing.with_pg_db(fn(db) {
+    let assert Ok(Nil) = queue.create(db, queue_name)
 
   let params = json.object([
     #("agent_id", json.string("agent-1")),
@@ -72,8 +71,9 @@ fn with_queue_and_task(
   )
 
   let result = test_fn(db, queue_name, ctx, claim)
-  let _ = queue.drop(db, queue_name)
-  result
+    let _ = queue.drop(db, queue_name)
+    result
+  })
 }
 
 /// A Chute program with one effect runs through the durable handler.

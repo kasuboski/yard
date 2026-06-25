@@ -11,6 +11,7 @@ chute = { path = "../../chute" }
 ballast = { path = "../../ballast" }
 yard = { path = "../../yard" }
 pig = { path = "../../../pig" }
+gabsurd = { path = "../../../gabsurd" }
 sqlight = ">= 1.1.0 and < 2.0.0"
 jscheam = ">= 2.0.0 and < 3.0.0"
 envoy = ">= 1.2.0 and < 2.0.0"

@@ -23,7 +23,6 @@ import yard/durable_turn
 import yard/gabsurd_checkpointer
 import yard/pg_conversation
 
-const db_url = "postgresql://gabsurd:gabsurd@127.0.0.1:5432/gabsurd"
 
 pub fn main() {
   gleeunit.main()
@@ -36,21 +35,22 @@ fn unique_id() -> String {
 fn with_db_queue(
   test_fn: fn(client.Db, String, task.Claim) -> a,
 ) -> a {
-  let queue_name = "conv_turn_" <> int.to_string(client.unique_integer())
-  let assert Ok(started) = client.start(db_url)
-  let db = started.data
-  let assert Ok(Nil) = queue.create(db, queue_name)
-  let assert Ok(_) =
-    task.spawn(db, queue_name, "test", json.object([]), task.new_options())
-  let assert Ok(claims) = task.claim(db, queue_name, "w1", 300, 1)
-  let assert [claim] = claims
+  testing.with_pg_db(fn(db) {
+    let queue_name = "conv_turn_" <> int.to_string(client.unique_integer())
+    let assert Ok(Nil) = queue.create(db, queue_name)
+    let assert Ok(_) =
+      task.spawn(db, queue_name, "test", json.object([]), task.new_options())
+    let assert Ok(claims) = task.claim(db, queue_name, "w1", 300, 1)
+    let assert [claim] = claims
 
-  let result = test_fn(db, queue_name, claim)
-  let _ = queue.drop(db, queue_name)
-  result
+    let result = test_fn(db, queue_name, claim)
+    let _ = queue.drop(db, queue_name)
+    result
+  })
 }
 
 import gleam/json
+import testing
 
 /// First turn: no conversation history exists.
 pub fn first_turn_no_history_test() {

@@ -11,6 +11,7 @@ gleam_json = ">= 3.1.0 and < 4.0.0"
 ballast = { path = "../../ballast" }
 yard = { path = "../../yard" }
 pig = { path = "../../../pig" }
+gabsurd = { path = "../../../gabsurd" }
 envoy = ">= 1.2.0 and < 2.0.0"
 
 [dev-dependencies]

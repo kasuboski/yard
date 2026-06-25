@@ -1,0 +1,868 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Yard · Repo Walkthrough</title>
+<style>
+  :root{
+    --bg:#0f1115; --panel:#161922; --panel2:#1b1f2a; --border:#262b38;
+    --ink:#e6e9f0; --ink-dim:#9aa3b4; --ink-faint:#6b7383;
+    --chute:#f4a261; --ballast:#2a9d8f; --yard:#6a8cff;
+    --pig:#c77dff; --ext:#8d99ae; --ok:#52b788; --warn:#e9c46a; --err:#e76f51;
+    --code-bg:#0c0e13; --mono:"SFMono-Regular",ui-monospace,"JetBrains Mono",Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+    font-size:15.5px;line-height:1.65;-webkit-font-smoothing:antialiased}
+  a{color:var(--yard);text-decoration:none}
+  a:hover{text-decoration:underline}
+
+  /* layout */
+  .wrap{display:grid;grid-template-columns:260px 1fr;max-width:1280px;margin:0 auto}
+  nav.toc{position:sticky;top:0;align-self:start;height:100vh;overflow-y:auto;
+    padding:28px 18px;border-right:1px solid var(--border);font-size:13.5px}
+  nav.toc h2{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-faint);margin:22px 0 8px}
+  nav.toc h2:first-child{margin-top:0}
+  nav.toc a{display:block;color:var(--ink-dim);padding:3px 10px;border-radius:6px;border-left:2px solid transparent}
+  nav.toc a:hover{background:var(--panel);color:var(--ink);text-decoration:none}
+  nav.toc a.lvl2{padding-left:22px;font-size:12.5px;color:var(--ink-faint)}
+  main{padding:0 44px 120px;min-width:0}
+
+  /* hero */
+  .hero{padding:60px 0 40px;border-bottom:1px solid var(--border);margin-bottom:8px}
+  .hero .kicker{color:var(--yard);font-size:12.5px;letter-spacing:.18em;text-transform:uppercase;font-weight:700}
+  .hero h1{font-size:46px;line-height:1.05;margin:14px 0 6px;letter-spacing:-.02em;
+    background:linear-gradient(90deg,var(--chute),var(--ballast) 45%,var(--yard));-webkit-background-clip:text;background-clip:text;color:transparent}
+  .hero p.lede{font-size:19px;color:var(--ink-dim);max-width:680px;margin:10px 0 0}
+  .badges{display:flex;flex-wrap:wrap;gap:8px;margin-top:22px}
+  .badge{font-size:12px;padding:4px 11px;border-radius:20px;border:1px solid var(--border);
+    background:var(--panel);color:var(--ink-dim);font-family:var(--mono)}
+  .badge.chute{border-color:#5a3f24;color:var(--chute)}
+  .badge.ballast{border-color:#1d4a44;color:var(--ballast)}
+  .badge.yard{border-color:#2a3a6e;color:var(--yard)}
+  .meta-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:30px}
+  .meta-grid .cell{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:16px 18px}
+  .meta-grid .cell .k{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-faint)}
+  .meta-grid .cell .v{font-size:22px;font-weight:700;margin-top:4px}
+
+  /* sections */
+  section{padding:46px 0;border-bottom:1px solid var(--border)}
+  section:last-child{border-bottom:none}
+  h2.title{font-size:29px;margin:0 0 6px;letter-spacing:-.01em;display:flex;align-items:center;gap:12px}
+  h2.title .num{font-family:var(--mono);font-size:14px;color:var(--ink-faint);font-weight:600}
+  .sub{color:var(--ink-dim);margin:0 0 26px;font-size:15.5px;max-width:760px}
+  h3{font-size:19px;margin:34px 0 10px}
+  h4{font-size:15px;margin:24px 0 8px;color:var(--ink)}
+  p{margin:10px 0}
+  ul,ol{margin:12px 0;padding-left:22px}
+  li{margin:5px 0}
+  strong{color:#fff;font-weight:650}
+  code{font-family:var(--mono);font-size:.88em;background:var(--panel2);padding:1px 5px;border-radius:4px;color:#d6deeb}
+
+  /* callouts */
+  .callout{border-left:3px solid var(--yard);background:rgba(106,140,255,.07);border-radius:0 10px 10px 0;padding:14px 18px;margin:18px 0}
+  .callout.key{border-color:var(--ballast);background:rgba(42,157,143,.08)}
+  .callout.warn{border-color:var(--warn);background:rgba(233,196,106,.08)}
+  .callout .tag{font-size:11px;letter-spacing:.1em;text-transform:uppercase;font-weight:700;color:var(--yard);margin-bottom:4px;display:block}
+  .callout.key .tag{color:var(--ballast)}
+  .callout.warn .tag{color:var(--warn)}
+
+  /* code blocks */
+  pre{background:var(--code-bg);border:1px solid var(--border);border-radius:10px;padding:16px 18px;overflow-x:auto;margin:16px 0}
+  pre code{background:none;padding:0;font-size:13px;line-height:1.6;color:#c9d1e0}
+  .filename{font-family:var(--mono);font-size:12px;color:var(--ink-faint);margin:18px 0 2px;display:flex;align-items:center;gap:8px}
+  .filename::before{content:"📄";filter:grayscale(.4)}
+  .kw{color:#ff7b72}.ty{color:#79c0ff}.st{color:#a5d6ff}.fn{color:#d2a8ff}.cm{color:#6b7383;font-style:italic}.nm{color:#7ee787}
+
+  /* tables */
+  .tbl{width:100%;border-collapse:collapse;margin:16px 0;font-size:13.5px}
+  .tbl th{text-align:left;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-faint);
+    padding:9px 12px;border-bottom:1px solid var(--border);background:var(--panel)}
+  .tbl td{padding:10px 12px;border-bottom:1px solid var(--border);vertical-align:top}
+  .tbl td code{white-space:nowrap}
+  .tbl tr:hover td{background:rgba(255,255,255,.015)}
+
+  /* cards / grid */
+  .grid{display:grid;gap:16px}
+  .grid.three{grid-template-columns:repeat(3,1fr)}
+  .grid.two{grid-template-columns:repeat(2,1fr)}
+  @media(max-width:900px){.grid.three,.grid.two{grid-template-columns:1fr}.wrap{grid-template-columns:1fr}nav.toc{display:none}}
+
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:20px;position:relative;overflow:hidden}
+  .card .pill{position:absolute;top:0;right:0;font-family:var(--mono);font-size:11px;padding:3px 10px;border-radius:0 12px 0 8px}
+  .card h4{margin:0 0 6px;font-size:16px}
+  .card p{font-size:13.5px;color:var(--ink-dim);margin:6px 0 0}
+  .card .files{font-family:var(--mono);font-size:11.5px;color:var(--ink-faint);margin-top:12px;line-height:1.8}
+  .c-chute{border-color:#3d2c1a}.c-chute .pill{background:#3d2c1a;color:var(--chute)}
+  .c-ballast{border-color:#163e39}.c-ballast .pill{background:#163e39;color:var(--ballast)}
+  .c-yard{border-color:#243459}.c-yard .pill{background:#243459;color:var(--yard)}
+
+  /* diagrams */
+  .diagram{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:28px;margin:20px 0}
+  .flow-3{display:flex;align-items:stretch;gap:0;justify-content:center;flex-wrap:wrap}
+  .node{flex:1;min-width:180px;max-width:260px;border-radius:12px;padding:18px 16px;text-align:center;position:relative}
+  .node .nh{font-size:20px;font-weight:700;margin-bottom:2px}
+  .node .nsub{font-size:12px;color:var(--ink-faint);font-family:var(--mono);margin-bottom:10px}
+  .node .nbody{font-size:13px;color:var(--ink-dim);text-align:left}
+  .node.chute{background:linear-gradient(160deg,#2a1f12,#1a140c);border:1px solid #4a3520}
+  .node.chute .nh{color:var(--chute)}
+  .node.ballast{background:linear-gradient(160deg,#14302c,#0e211e);border:1px solid #1d4a44}
+  .node.ballast .nh{color:var(--ballast)}
+  .node.yard{background:linear-gradient(160deg,#1a2440,#121a30);border:1px solid #2a3a6e}
+  .node.yard .nh{color:var(--yard)}
+  .arrow{display:flex;align-items:center;justify-content:center;min-width:60px;color:var(--ink-faint);font-size:12px;font-family:var(--mono);flex-direction:column;gap:3px}
+  .arrow .lbl{font-size:10.5px;color:var(--ink-faint)}
+  @media(max-width:900px){.arrow{transform:rotate(90deg);min-height:40px;min-width:100%}}
+
+  .vflow{display:flex;flex-direction:column;align-items:center;gap:0;max-width:560px;margin:18px auto}
+  .vstep{background:var(--panel2);border:1px solid var(--border);border-radius:10px;padding:12px 16px;width:100%;font-size:13.5px}
+  .vstep .stepnum{font-family:var(--mono);color:var(--yard);font-weight:700;margin-right:8px}
+  .vstep .mono{font-family:var(--mono);font-size:12.5px;color:var(--chute)}
+  .varr{color:var(--ink-faint);font-size:18px;line-height:1;padding:4px 0}
+
+  .loop-box{border:1px dashed var(--border);border-radius:12px;padding:20px;margin:18px 0;position:relative}
+  .loop-box .looplbl{position:absolute;top:-10px;left:18px;background:var(--bg);padding:0 8px;font-size:11px;
+    letter-spacing:.1em;text-transform:uppercase;color:var(--ink-faint)}
+
+  /* tree */
+  .tree{font-family:var(--mono);font-size:13px;line-height:1.75;color:var(--ink-dim);background:var(--code-bg);
+    border:1px solid var(--border);border-radius:10px;padding:18px 20px;overflow-x:auto;
+    white-space:pre;tab-size:2}
+  .tree .dir{color:var(--yard);font-weight:600}
+  .tree .cm{color:var(--ink-faint)}
+  .tree .hot{color:var(--chute)}
+  .tree .bal{color:var(--ballast)}
+  .tree .yrd{color:var(--yard)}
+
+  .foot{color:var(--ink-faint);font-size:12.5px;text-align:center;padding:40px 0 0}
+  .tag-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+  .chip{font-family:var(--mono);font-size:11px;padding:2px 8px;border-radius:5px;background:var(--panel2);color:var(--ink-dim);border:1px solid var(--border)}
+  .chip.c{color:var(--chute);border-color:#3d2c1a}
+  .chip.b{color:var(--ballast);border-color:#163e39}
+  .chip.y{color:var(--yard);border-color:#243459}
+  hr.sep{border:none;border-top:1px solid var(--border);margin:34px 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<!-- ===================== TOC ===================== -->
+<nav class="toc">
+  <h2>Walkthrough</h2>
+  <a href="#summary">1 · Executive summary</a>
+  <a href="#bigpicture">2 · The big picture</a>
+  <a href="#deps">3 · Dependency graph</a>
+  <a href="#map">4 · Repository map</a>
+  <a href="#chute">5 · Chute — the language</a>
+  <a href="#ballast">6 · Ballast — the sandbox</a>
+  <a href="#yard">7 · Yard — the host</a>
+  <a href="#runner" class="lvl2">The runner loop</a>
+  <a href="#obs" class="lvl2">Observability</a>
+  <a href="#durability" class="lvl2">Durability</a>
+  <a href="#data" class="lvl2">Data &amp; persistence</a>
+  <a href="#cron" class="lvl2">Scheduling</a>
+  <a href="#ui" class="lvl2">The dashboard UI</a>
+  <a href="#examples">8 · The examples</a>
+  <a href="#flows">9 · End-to-end flows</a>
+  <a href="#dev">10 · Developer workflow</a>
+  <a href="#glossary">11 · Glossary</a>
+  <a href="#where">12 · Where to look</a>
+</nav>
+
+<!-- ===================== MAIN ===================== -->
+<main>
+
+<!-- HERO -->
+<div class="hero">
+  <div class="kicker">Repo walkthrough · for new developers &amp; tech leads</div>
+  <h1>The Yard Project</h1>
+  <p class="lede">A sandboxed scripting language purpose-built for LLM agents — split into a <strong>language</strong>, a <strong>pure evaluator</strong>, and a <strong>host runtime</strong> that drives it against the real world.</p>
+  <div class="badges">
+    <span class="badge">Gleam → Erlang/BEAM</span>
+    <span class="badge">OTP actors</span>
+    <span class="badge">PostgreSQL</span>
+    <span class="badge">SQLite</span>
+    <span class="badge">mise</span>
+    <span class="badge">4 packages · ~10.5k LOC</span>
+  </div>
+  <div class="meta-grid">
+    <div class="cell"><div class="k">Language</div><div class="v">Chute</div></div>
+    <div class="cell"><div class="k">Evaluator</div><div class="v">Ballast</div></div>
+    <div class="cell"><div class="k">Host runtime</div><div class="v">Yard</div></div>
+  </div>
+</div>
+
+<!-- 1. SUMMARY -->
+<section id="summary">
+  <h2 class="title"><span class="num">01</span> Executive summary</h2>
+  <p class="sub">What this project is, in one screen.</p>
+
+  <p>LLMs write code linearly — top to bottom, left to right. Most languages fight that with nested scopes, early returns, and pyramids of doom. This project embraces it. <strong>Chute</strong> is a tiny pipeline-first language an LLM can generate correctly token-by-token. It has <em>no loops</em>, <em>no recursion</em>, and <em>no direct I/O</em> — so any program written in it is guaranteed to halt and cannot touch the outside world on its own.</p>
+
+  <p>Instead of doing I/O, a Chute program <em>declares</em> what it wants to do at the top of the file (<code>effect charge_card(...)</code>) and asks for it with <code>perform</code>. When the evaluator (<strong>Ballast</strong>) hits a <code>perform</code>, it doesn't call anything — it <em>yields</em> a data value describing the intent and pauses. <strong>Yard</strong>, the host runtime, sees that yield, does the real work (HTTP, DB, LLM call), and <em>resumes</em> the evaluator with the result. To the LLM the code looks synchronous; to the runtime it's a pure function.</p>
+
+  <div class="callout key">
+    <span class="tag">The one-sentence mental model</span>
+    A Chute program is a <strong>deterministic recipe</strong>. Ballast cooks it but refuses to leave the kitchen. Yard is the waiter who carries each instruction ("charge the card") out to the real world and brings the result back.
+  </div>
+
+  <h4>Why this split exists</h4>
+  <ul>
+    <li><strong>Safety by construction</strong> — untrusted LLM code runs in a sandbox that provably halts and provably cannot do I/O. Side effects are a host-controlled capability, not a language feature.</li>
+    <li><strong>Static capability checks</strong> — before a program runs, the host scans its declared effects against an allow-list. A hallucinated <code>effect delete_database()</code> is refused before execution.</li>
+    <li><strong>Observability for free</strong> — because every side effect is a yield/resume crossing the host boundary, the host can log, time, and checkpoint each one automatically.</li>
+    <li><strong>Durability</strong> — that same boundary lets the host checkpoint each effect result, so a crashed run can resume without re-charging a card or re-calling an LLM.</li>
+  </ul>
+</section>
+
+<!-- 2. BIG PICTURE -->
+<section id="bigpicture">
+  <h2 class="title"><span class="num">02</span> The big picture</h2>
+  <p class="sub">Three layers, one pipeline. Data and control flow left to right.</p>
+
+  <div class="diagram">
+    <div class="flow-3">
+      <div class="node chute">
+        <div class="nh">Chute</div>
+        <div class="nsub">the language</div>
+        <div class="nbody">Pipeline syntax an LLM generates. Parses source → AST → desugars pipelines → canonical S-expressions for transport. Static type-check + effect declaration scan.</div>
+      </div>
+      <div class="arrow">━━━▶<span class="lbl">parse / desugar</span></div>
+      <div class="node ballast">
+        <div class="nh">Ballast</div>
+        <div class="nsub">the evaluator</div>
+        <div class="nbody">Pure functional, CPS tree-walker. Zero I/O. Gas counter = guaranteed halt. Hits <code>perform</code> → yields a value + continuation, waits to be resumed.</div>
+      </div>
+      <div class="arrow">◀━━━▶<span class="lbl">yield / resume</span></div>
+      <div class="node yard">
+        <div class="nh">Yard</div>
+        <div class="nsub">the host runtime</div>
+        <div class="nbody">Generic loop over Ballast's yield/resume. Dispatches each effect to a handler, emits structured events, checkpoints results, loads actors, fires cron triggers.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout">
+    <span class="tag">Read this first</span>
+    Each node is a <strong>separate Gleam package</strong> with a hard dependency arrow: <code>chute ← ballast ← yard</code>. The arrow is one-directional for good reason — the inner layers know nothing about the outer ones. Ballast never imports Yard; Chute never imports Ballast. This is what makes the sandbox boundary real and testable.
+  </div>
+</section>
+
+<!-- 3. DEPENDENCY GRAPH -->
+<section id="deps">
+  <h2 class="title"><span class="num">03</span> Dependency graph</h2>
+  <p class="sub">How the packages relate — internal monorepo deps in color, external libs in grey.</p>
+
+  <div class="grid two">
+    <div>
+      <div class="filename">Internal package graph (paths from gleam.toml)</div>
+<pre><code><span class="cm">// the core stack — strict layering</span>
+<span class="chute">chute</span>          <span class="cm">// no internal deps — just gleam_stdlib</span>
+  ↑
+<span class="ballast">ballast</span>        <span class="cm">// chute = { path = "../chute" }</span>
+  ↑
+<span class="yard">yard</span>           <span class="cm">// chute + ballast + gabsurd + pig</span>
+  ↑
+<span class="bal">examples</span>       <span class="cm">// chute + ballast + yard + pig</span>
+
+<span class="cm">// sibling projects outside this repo (path deps)</span>
+<span class="nm">pig</span>            <span class="cm">// ../pig        — LLM agent framework</span>
+<span class="nm">gabsurd</span>        <span class="cm">// ../../gabsurd — Postgres durable workflow engine</span>
+</code></pre>
+    </div>
+    <div>
+      <h4>What each external dep is for</h4>
+      <table class="tbl">
+        <tr><th>Dependency</th><th>Role in the stack</th></tr>
+        <tr><td><code>pig</code></td><td>LLM agent loop — providers (OpenAI-compatible), tool calls, workspace (VFS + KV SQLite), session events. The "brain" Yard delegates <code>run_agent</code> effects to.</td></tr>
+        <tr><td><code>gabsurd</code></td><td>Gleam bindings to <strong>Absurd</strong>, a Postgres-native durable workflow engine. Powers Yard's checkpoints, task queues, and crash-resume.</td></tr>
+        <tr><td><code>automata</code></td><td>Cron expression parsing &amp; "next fire time" math for the scheduler.</td></tr>
+        <tr><td><code>sqlight</code></td><td>SQLite driver — Yard's global registry DB (agents, skills, schedules, runs, chat).</td></tr>
+        <tr><td><code>parrot</code></td><td>sqlc wrapper → type-safe Gleam SQL codegen (<code>sql.gleam</code>).</td></tr>
+        <tr><td><code>mist</code></td><td>HTTP server — serves the observability dashboard.</td></tr>
+        <tr><td><code>birl</code> / <code>gluid</code></td><td>Time + UUID generation.</td></tr>
+        <tr><td><code>telemetry</code></td><td>Erlang telemetry — Yard always projects events here.</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="callout warn">
+    <span class="tag">⚠ Two packages live outside this repo</span>
+    <code>pig</code> (<code>../pig</code>) and <code>gabsurd</code> (<code>../../gabsurd</code>) are sibling projects referenced by relative path. The repo will not build without them on disk in those locations. Yard's durable features (Postgres) and its LLM integration depend on them.
+  </div>
+</section>
+
+<!-- 4. REPOSITORY MAP -->
+<section id="map">
+  <h2 class="title"><span class="num">04</span> Repository map</h2>
+  <p class="sub">An annotated directory tree. Coloured entries map to the three layers.</p>
+
+  <div class="tree">
+<span class="dir">yard-project/</span>                      <span class="cm"># monorepo root</span>
+├── <span class="hot">chute/</span>                           <span class="cm"># ── LAYER 1: the language ──</span>
+│   ├── src/
+│   │   ├── <span class="hot">chute.gleam</span>                 <span class="cm"># public API: parse, desugar, to_sexp, from_sexp</span>
+│   │   └── chute/
+│   │       ├── lexer.gleam            <span class="cm"># source → tokens</span>
+│   │       ├── token.gleam            <span class="cm"># token type defs</span>
+│   │       ├── parser.gleam           <span class="cm"># tokens → AST (718 lines, biggest file)</span>
+│   │       ├── ast.gleam              <span class="cm"># AST type definitions (the shared contract)</span>
+│   │       ├── desugar.gleam          <span class="cm"># pipelines → nested calls; normalize</span>
+│   │       ├── typecheck.gleam        <span class="cm"># static type + capability check (755 lines)</span>
+│   │       ├── typecheck/{stdlib,types}.gleam
+│   │       ├── sexp.gleam             <span class="cm"># AST → canonical S-expressions</span>
+│   │       └── sexp_parse.gleam       <span class="cm"># S-expressions → AST (transport round-trip)</span>
+│   └── test/                          <span class="cm"># 237 tests — lexer, parser, typecheck, roundtrip</span>
+│
+├── <span class="bal">ballast/</span>                         <span class="cm"># ── LAYER 2: the evaluator ──</span>
+│   ├── src/
+│   │   ├── <span class="bal">ballast.gleam</span>               <span class="cm"># public API: run, start, resume, prepare</span>
+│   │   └── ballast/
+│   │       ├── eval.gleam             <span class="cm"># CPS tree-walker + stdlib (1057 lines — the heart)</span>
+│   │       ├── value.gleam            <span class="cm"># Value ADT, RuntimeError, equality, display</span>
+│   │       ├── effect.gleam           <span class="cm"># EvalResult, opaque Continuation, resume</span>
+│   │       └── env.gleam              <span class="cm"># variable environment (dict wrapper)</span>
+│   └── test/                          <span class="cm"># 76 tests — eval, stdlib, effects, integration</span>
+│
+├── <span class="yrd">yard/</span>                            <span class="cm"># ── LAYER 3: the host runtime ──</span>
+│   ├── src/
+│   │   ├── <span class="yrd">yard.gleam</span>                  <span class="cm"># public API: start(), start_with_ui(), stop()</span>
+│   │   └── yard/
+│   │       ├── <span class="yrd">runner.gleam</span>             <span class="cm"># ★ the generic yield/resume loop (339 lines)</span>
+│   │       ├── loader.gleam           <span class="cm"># parse + hash an actor → LoadedActor</span>
+│   │       ├── obs/                   <span class="cm"># observability subsystem</span>
+│   │       │   ├── events.gleam       <span class="cm"># HostEvent (5 variants) + telemetry projection</span>
+│   │       │   ├── dispatcher.gleam   <span class="cm"># shared OTP fan-out actor</span>
+│   │       │   ├── session.gleam      <span class="cm"># JSONL session writer consumer</span>
+│   │       │   ├── terminal.gleam     <span class="cm"># stdout printer consumer</span>
+│   │       │   └── {emit,consumer_spec}.gleam
+│   │       ├── durability.gleam       <span class="cm"># replay-or-record store (the durability seam)</span>
+│   │       ├── checkpoint.gleam       <span class="cm"># Checkpointer abstraction (in_memory impl)</span>
+│   │       ├── durable_handler.gleam  <span class="cm"># run a handler inside a gabsurd task</span>
+│   │       ├── agent_turn.gleam       <span class="cm"># durable Pig LLM turn (checkpoints responses)</span>
+│   │       ├── agent_checkpoint.gleam <span class="cm"># message ↔ JSON for LLM durability</span>
+│   │       ├── conversation.gleam     <span class="cm"># multi-turn conversation store</span>
+│   │       ├── durable_turn.gleam     <span class="cm"># assemble history on first run vs retry</span>
+│   │       ├── handler_registry.gleam <span class="cm"># name → builder; resolve per-agent handlers</span>
+│   │       ├── cron_engine.gleam      <span class="cm"># OTP cron actor (CURRENT — being retired for pg_cron)</span>
+│   │       ├── cron_time.gleam        <span class="cm"># birl ⇄ cron datetime conversions</span>
+│   │       ├── skill_repo.gleam       <span class="cm"># CRUD over the skills table (SQLite, for now)</span>
+│   │       ├── db.gleam               <span class="cm"># ⚠ SQLite registry layer (CURRENT — target is Postgres)</span>
+│   │       ├── sql.gleam              <span class="cm"># ⚠ AUTO-GENERATED by parrot — do not edit</span>
+│   │       ├── value_codec.gleam      <span class="cm"># ballast Value ⇄ JSON for checkpoints</span>
+│   │       ├── pg_*.gleam             <span class="cm"># PostgreSQL stores: conversation/events/cron (TARGET, tests only)</span>
+│   │       ├── gabsurd_checkpointer.gleam  <span class="cm"># Checkpointer impl over gabsurd Postgres</span>
+│   │       ├── ui/                    <span class="cm"># observability dashboard (mist HTTP server)</span>
+│   │       │   ├── server.gleam · queries.gleam · template.gleam
+│   │       └── sql/                   <span class="cm"># SQL sources of truth</span>
+│   │           ├── schema.sql         <span class="cm"># SQLite DDL (EDIT THIS)</span>
+│   │           ├── queries.sql        <span class="cm"># named queries (EDIT THIS)</span>
+│   │           └── durable_schema.sql <span class="cm"># Postgres durable tables</span>
+│   ├── shared/  frontend/             <span class="cm"># build artefact dirs (gleam lockfiles)</span>
+│   └── test/                          <span class="cm"># 200+ tests across every subsystem</span>
+│
+├── <span class="dir">examples/</span>                        <span class="cm"># ── reference applications ──</span>
+│   ├── issue-triage/                  <span class="cm"># GitHub tracking-issue sync (cron → pig agent)</span>
+│   └── hermes-agent/                  <span class="cm"># 5-pillar agentic OS (chute_exec tool + Telegram)</span>
+│
+├── <span class="dir">knowledge/</span>                       <span class="cm"># ── the design docs (read these!) ──</span>
+│   ├── chute.md  ballast.md  syntax.md
+│   ├── observability.md  durable.md  projectnaming.md  GLEAM_OVERVIEW.md
+├── <span class="dir">docs/adr/</span>                        <span class="cm"># architecture decision records</span>
+├── README.md  CONTEXT.md  IDEA.md  AGENTS.md   <span class="cm"># orientation docs</span>
+├── mise.toml                         <span class="cm"># all build/test/check tasks (the source of truth)</span>
+└── bin/postgres.sh                   <span class="cm"># spin up the Postgres dev container</span>
+  </div>
+
+  <h4>Size &amp; complexity at a glance</h4>
+  <table class="tbl">
+    <tr><th>Package</th><th>Source LOC</th><th>Largest module</th><th>Tests</th><th>What it proves</th></tr>
+    <tr><td><span class="chip c">chute</span></td><td>~3,020</td><td><code>typecheck.gleam</code> (755)</td><td>237</td><td>Syntactic safety + halting</td></tr>
+    <tr><td><span class="chip b">ballast</span></td><td>~1,500</td><td><code>eval.gleam</code> (1,057)</td><td>76</td><td>Effect isolation + gas</td></tr>
+    <tr><td><span class="chip y">yard</span></td><td>~5,970</td><td><code>db.gleam</code> (1,137)</td><td>200+</td><td>Orchestration + durability</td></tr>
+  </table>
+</section>
+
+<!-- 5. CHUTE -->
+<section id="chute">
+  <h2 class="title"><span class="num">05</span> Chute — the language</h2>
+  <p class="sub">A pipeline-first language tuned for LLM token generation. No loops, no recursion, no imports — only declared effects.</p>
+
+  <div class="grid three">
+    <div class="card c-chute">
+      <span class="pill">surface syntax</span>
+      <h4>Designed for linear generation</h4>
+      <p>Data flows top-to-bottom through <code>|&gt;</code> pipelines. No nested scopes, no early returns, no pyramids of doom — exactly the shape an LLM emits when writing left-to-right.</p>
+      <div class="files">parser.gleam<br>lexer.gleam<br>token.gleam</div>
+    </div>
+    <div class="card c-chute">
+      <span class="pill">capabilities</span>
+      <h4>Effects are declared, not imported</h4>
+      <p><code>effect fetch_url(url)</code> at the top of a file is a <em>capability request</em>, not an import. The program says <em>what</em> it wants; the host decides <em>if</em> and <em>how</em>. Hallucinated effects are rejected pre-execution.</p>
+      <div class="files">typecheck.gleam<br>typecheck/stdlib.gleam</div>
+    </div>
+    <div class="card c-chute">
+      <span class="pill">transport format</span>
+      <h4>S-expressions for storage</h4>
+      <p>Source is desugared into canonical S-expressions (comments stripped, whitespace normalized). The hash of this canonical form <em>is</em> the actor's version identity.</p>
+      <div class="files">sexp.gleam<br>sexp_parse.gleam<br>desugar.gleam</div>
+    </div>
+  </div>
+
+  <h3>What a program looks like</h3>
+  <div class="filename">a complete Chute actor (from the issue-triage example)</div>
+<pre><code><span class="cm">// 1. Verbs — declared capabilities (the only way to do I/O)</span>
+<span class="kw">effect</span> fetch_issue(repo: <span class="ty">String</span>, number: <span class="ty">Int</span>) -> <span class="ty">Result</span>(<span class="ty">String</span>, <span class="ty">String</span>)
+<span class="kw">effect</span> run_agent(context: <span class="ty">String</span>, task: <span class="ty">String</span>) -> <span class="ty">Result</span>(<span class="ty">String</span>, <span class="ty">String</span>)
+<span class="kw">effect</span> update_issue(repo: <span class="ty">String</span>, number: <span class="ty">Int</span>, comment: <span class="ty">String</span>) -> <span class="ty">Result</span>(<span class="ty">Nil</span>, <span class="ty">String</span>)
+
+<span class="cm">// 2. Nouns — a single env envelope is the only entrypoint</span>
+<span class="kw">pub fn</span> <span class="fn">main</span>(env: { repo: <span class="ty">String</span>, tracking_number: <span class="ty">Int</span> }) -> <span class="ty">Result</span>(<span class="ty">Nil</span>, <span class="ty">String</span>) {
+  <span class="cm">// 3. Linear pipeline + `let try` for error propagation</span>
+  <span class="kw">let try</span> issue = <span class="kw">perform</span> fetch_issue(env.repo, env.tracking_number)
+  <span class="kw">let try</span> result = <span class="kw">perform</span> run_agent(issue, <span class="st">"summarise changes"</span>)
+
+  <span class="cm">// 4. Pattern match to branch (no if/else, no exceptions)</span>
+  <span class="kw">case</span> result {
+    <span class="st">"NO_CHANGES"</span> -> <span class="fn">Ok</span>(<span class="ty">Nil</span>)
+    _ -> <span class="kw">perform</span> update_issue(env.repo, env.tracking_number, result)
+  }
+}</code></pre>
+
+  <h4>The compilation pipeline</h4>
+  <div class="vflow">
+    <div class="vstep"><span class="stepnum">1</span><span class="mono">lexer.gleam</span> — source text → list of tokens</div>
+    <div class="varr">▼</div>
+    <div class="vstep"><span class="stepnum">2</span><span class="mono">parser.gleam</span> — tokens → AST (<code>Program</code> of declarations)</div>
+    <div class="varr">▼</div>
+    <div class="vstep"><span class="stepnum">3</span><span class="mono">desugar.gleam</span> — rewrite <code>a |> b</code> into nested calls; strip <code>ExprGroup</code></div>
+    <div class="varr">▼</div>
+    <div class="vstep"><span class="stepnum">4</span><span class="mono">typecheck.gleam</span> — static types + effect-declaration scan (the firewall)</div>
+    <div class="varr">▼</div>
+    <div class="vstep"><span class="stepnum">5</span><span class="mono">sexp.gleam</span> — canonical S-expression (for hashing, storage, transport)</div>
+  </div>
+
+  <div class="callout key">
+    <span class="tag">Why this matters for safety</span>
+    Two bans do the heavy lifting: <strong>no loops/recursion</strong> (iteration is <code>list.map/filter/fold</code> only) plus a <strong>gas counter</strong> in Ballast means every program provably halts. Combined with the effect firewall, an LLM cannot write code that hangs, recurses infinitely, or exfiltrates data through an unapproved channel.
+  </div>
+
+  <h4>Types in one table</h4>
+  <table class="tbl">
+    <tr><th>Category</th><th>Examples</th><th>Notes</th></tr>
+    <tr><td>Primitives</td><td><code>Int</code> <code>Float</code> <code>String</code> <code>Bool</code> <code>Nil</code></td><td>Strict, immutable.</td></tr>
+    <tr><td>Structural records</td><td><code>{ name: String, age: Int }</code></td><td>Anonymous, JSON-like — no type declarations needed. Maps to LLM data habits.</td></tr>
+    <tr><td>Wrappers</td><td><code>List(T)</code> <code>Option(T)</code> <code>Result(T, E)</code></td><td>First-class constructors (<code>Ok</code>, <code>Some</code>, <code>None</code> are values, not syntax).</td></tr>
+    <tr><td>Errors</td><td>everything returns <code>Result</code></td><td>No exceptions. Pipeline with <code>result.try</code> short-circuits on <code>Error</code>.</td></tr>
+  </table>
+  <p style="font-size:13px;color:var(--ink-faint)">Full grammar: <code>knowledge/syntax.md</code> (EBNF + operator precedence).</p>
+</section>
+
+<!-- 6. BALLAST -->
+<section id="ballast">
+  <h2 class="title"><span class="num">06</span> Ballast — the sandbox</h2>
+  <p class="sub">A pure functional evaluator. It cannot print, cannot open a file, cannot make a network call. It only evaluates expressions — and yields when it needs the outside world.</p>
+
+  <div class="grid two">
+    <div class="card c-ballast">
+      <span class="pill">CPS evaluator</span>
+      <h4>The sandbox boundary is <code>perform</code></h4>
+      <p>When Ballast hits <code>perform charge_card(99.95)</code> it returns a <em>value</em> — <code>Yielded("charge_card", [99.95], &lt;continuation&gt;, gas)</code> — not a side effect. The continuation is an opaque Gleam closure capturing "everything that happens next."</p>
+      <div class="files">eval.gleam — CPS core<br>effect.gleam — EvalResult + Continuation</div>
+    </div>
+    <div class="card c-ballast">
+      <span class="pill">gas counter</span>
+      <h4>Guaranteed halting by construction</h4>
+      <p>Every <code>eval</code> call ticks a counter. Default budget 10,000 steps. Hit zero → <code>GasExhausted</code>. Even a <code>list.fold</code> over a huge list can't burn unbounded resources. No threads, no coroutines — just functions.</p>
+      <div class="files">eval.gleam — tick() per call<br>value.gleam — RuntimeError</div>
+    </div>
+  </div>
+
+  <h3>Every evaluation produces exactly one of three outcomes</h3>
+  <div class="filename">ballast/src/ballast/effect.gleam</div>
+<pre><code><span class="kw">pub type</span> <span class="ty">EvalResult</span> {
+  <span class="fn">EvalDone</span>(value: <span class="ty">Value</span>, gas: <span class="ty">Int</span>)          <span class="cm">// normal completion</span>
+  <span class="fn">Yielded</span>(                            <span class="cm">// hit a `perform` — hand to host</span>
+    effect: <span class="ty">String</span>,                    <span class="cm">//   "charge_card"</span>
+    args: <span class="ty">List</span>(<span class="ty">Value</span>),                <span class="cm">//   [FloatVal(99.95)]</span>
+    continuation: <span class="ty">Continuation</span>,          <span class="cm">//   opaque — resume() is the only op</span>
+    gas: <span class="ty">Int</span>)                         <span class="cm">//   remaining budget</span>
+  <span class="fn">EvalError</span>(error: <span class="ty">RuntimeError</span>)        <span class="cm">// non-recoverable</span>
+}</code></pre>
+
+  <h4>The public API — two levels</h4>
+  <table class="tbl">
+    <tr><th>Level</th><th>Function</th><th>Use when</th></tr>
+    <tr><td rowspan="3"><strong>Source level</strong><br><span style="color:var(--ink-faint);font-size:12px">parse + desugar + run</span></td>
+      <td><code>run(source)</code> / <code>run_with_gas</code></td><td>One-shot run with no effects (effects → error).</td></tr>
+    <tr><td><code>start(source, gas)</code></td><td>Run <em>with</em> effects — returns the first <code>EvalResult</code>.</td></tr>
+    <tr><td><code>resume(cont, value)</code></td><td>Feed a host result back in, get the next <code>EvalResult</code>.</td></tr>
+    <tr><td rowspan="2"><strong>AST level</strong><br><span style="color:var(--ink-faint);font-size:12px">skip parsing</span></td>
+      <td><code>prepare(source)</code></td><td>Parse + desugar <em>once</em> → reusable <code>Program</code>.</td></tr>
+    <tr><td><code>run_program(prog, gas)</code></td><td>"Compile once, run many" — for scheduled actors that re-run with fresh data.</td></tr>
+  </table>
+
+  <div class="callout">
+    <span class="tag">Why CPS instead of BEAM processes?</span>
+    The evaluator is pure — it returns values, the host decides how to drive it (sync loop, GenServer, distributed). Testing is trivial (no process setup). The continuation is just a Gleam closure. This purity is what later lets Yard checkpoint and resume a run across a crash.
+  </div>
+
+  <h4>Built-in stdlib (implemented inline in <code>eval.gleam</code>)</h4>
+  <div class="tag-row">
+    <span class="chip">list.map</span><span class="chip">list.filter</span><span class="chip">list.fold</span><span class="chip">list.length</span>
+    <span class="chip">result.try</span><span class="chip">result.map</span><span class="chip">result.is_ok</span><span class="chip">result.is_error</span>
+    <span class="chip">option.map</span><span class="chip">string.length</span><span class="chip">string.concat</span><span class="chip">task.dispatch_all</span>
+  </div>
+  <p style="font-size:13px;color:var(--ink-faint)">These are the <em>only</em> way to iterate — there is no <code>while</code> or <code>for</code>. <code>task.dispatch_all</code> batches thunks for concurrent effect dispatch. Full reference: <code>knowledge/ballast.md</code>.</p>
+</section>
+
+<!-- 7. YARD -->
+<section id="yard">
+  <h2 class="title"><span class="num">07</span> Yard — the host runtime</h2>
+  <p class="sub">The glue between Ballast's sandbox and the real world. The biggest layer — orchestration, observability, durability, scheduling, persistence, and a dashboard.</p>
+
+  <div class="filename">yard/src/yard.gleam — the public entry points</div>
+<pre><code><span class="cm">// Start the observability stack (dispatcher + consumers under a OneForAll supervisor)</span>
+<span class="kw">pub fn</span> <span class="fn">start</span>(consumers: <span class="ty">List</span>(<span class="ty">ConsumerSpec</span>)) -> <span class="ty">Result</span>(<span class="ty">Yard</span>, <span class="ty">StartError</span>)
+
+<span class="cm">// Start yard + the HTTP dashboard (queries Postgres directly)</span>
+<span class="kw">pub fn</span> <span class="fn">start_with_ui</span>(consumers, db, queue_name, ui_port) -> <span class="ty">Result</span>(<span class="ty">Yard</span>, <span class="ty">StartError</span>)
+
+<span class="cm">// Clean shutdown — exits both supervisors, OTP cascades to children</span>
+<span class="kw">pub fn</span> <span class="fn">stop</span>(yard: <span class="ty">Yard</span>) -> <span class="ty">Nil</span></code></pre>
+
+  <p>But the heart of Yard isn't <code>yard.gleam</code> — it's the <strong>runner</strong>: one function that every trigger, test, and inner program funnels through.</p>
+
+  <!-- runner -->
+  <h3 id="runner">★ The runner — one loop to rule them all</h3>
+  <p><code>yard/runner.gleam</code> is the <strong>single place</strong> where Ballast's yield/resume cycle is consumed as a loop. It has zero knowledge of specific effects or triggers — effect names and trigger types are just strings. This is the load-bearing architectural decision: everything goes through <code>runner.run(config)</code>, so observability and durability are baked in by construction.</p>
+
+  <div class="loop-box">
+    <span class="looplbl">runner.run(config)</span>
+    <div class="vflow">
+      <div class="vstep"><span class="stepnum">▸</span>emit <code>ActorStarted</code> · record start time</div>
+      <div class="varr">▼</div>
+      <div class="vstep"><span class="stepnum">▸</span><span class="mono">ballast.start_program_with_env(program, env, gas)</span> → first <code>EvalResult</code></div>
+      <div class="varr">▼</div>
+      <div class="vstep"><span class="stepnum">▸</span><strong>loop on the EvalResult:</strong></div>
+    </div>
+    <div style="margin-top:14px;padding-left:8px;border-left:2px solid var(--border)">
+      <p style="margin:4px 0"><code>EvalDone</code> → emit <code>ActorCompleted</code>, return <code>Ok(value)</code></p>
+      <p style="margin:4px 0"><code>EvalError</code> → emit <code>ActorCompleted</code>, return <code>Error</code></p>
+      <p style="margin:4px 0"><code>Yielded(name, args, cont, gas)</code> → <strong>the interesting case:</strong></p>
+    </div>
+    <div class="vflow" style="margin-top:10px">
+      <div class="vstep"><span class="stepnum">a</span><strong>Durability lookup</strong> — <code>store.lookup(step, name)</code>. If a checkpoint exists, emit <code>EffectReplayed</code>, resume Ballast with the stored value (skip the handler entirely).</div>
+      <div class="varr">▼ no checkpoint</div>
+      <div class="vstep"><span class="stepnum">b</span>emit <code>EffectYielded</code> · look up handler by name in <code>config.handlers</code> dict</div>
+      <div class="varr">▼</div>
+      <div class="vstep"><span class="stepnum">c</span><strong>call the handler</strong> <code>(name, args) → Result(Value, Error)</code> — this is where real I/O happens</div>
+      <div class="varr">▼</div>
+      <div class="vstep"><span class="stepnum">d</span>emit <code>EffectHandled</code> · <strong>record</strong> the result via <code>store.record(step, name, value)</code> (a guarantee — failure surfaces, see ADR-0001)</div>
+      <div class="varr">▼</div>
+      <div class="vstep"><span class="stepnum">e</span><span class="mono">ballast.resume(cont, value)</span> → next <code>EvalResult</code> · <strong>loop back to ▸</strong></div>
+    </div>
+  </div>
+
+  <div class="callout key">
+    <span class="tag">Everything calls the runner</span>
+    Webhooks, cron ticks, message routers, the <code>chute_exec</code> tool, and tests all build a <code>RunConfig</code> and call <code>runner.run(config)</code>. A trigger is just code that translates an external stimulus into a <code>RunConfig</code> (right actor, env, handlers, trigger_type/source strings). Adding a trigger type requires <strong>zero changes</strong> to Yard.
+  </div>
+
+  <!-- obs -->
+  <h3 id="obs">Observability — automatic, not opt-in</h3>
+  <p>Because every run goes through the runner, every run emits the same structured events. You can't forget to log a run because the runner always does it.</p>
+
+  <div class="diagram">
+    <p style="text-align:center;color:var(--ink-faint);font-size:12px;margin-top:0">runners emit → one shared dispatcher → fans out</p>
+    <div style="display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-bottom:14px">
+      <span class="chip y">Runner (triage)</span><span class="chip y">Runner (review)</span><span class="chip y">Runner (deploy)</span>
+    </div>
+    <p style="text-align:center;font-size:20px;color:var(--ink-faint);margin:0">▼ ▼ ▼</p>
+    <div style="text-align:center;margin:10px 0"><span class="chip" style="font-size:13px;padding:6px 14px">Dispatcher (one shared OTP actor)</span></div>
+    <p style="text-align:center;font-size:13px;color:var(--ink-faint);margin:0">always projects to <code>:telemetry</code> · then fire-and-forget to consumers</p>
+    <p style="text-align:center;font-size:20px;color:var(--ink-faint);margin:8px 0">▼ &nbsp; ▼ &nbsp; ▼</p>
+    <div style="display:flex;justify-content:center;gap:10px;flex-wrap:wrap">
+      <span class="chip">Session writer (JSONL)</span><span class="chip">Terminal printer (stdout)</span><span class="chip">Postgres <code>yard_events</code></span><span class="chip">your custom consumer</span>
+    </div>
+  </div>
+
+  <h4>Five HostEvent variants cover the entire lifecycle</h4>
+  <table class="tbl">
+    <tr><th>Event</th><th>Emitted when</th><th>Key fields</th></tr>
+    <tr><td><code>ActorStarted</code></td><td>run begins</td><td>actor_path, actor_hash, trigger_type/source, run_id, gas, depth</td></tr>
+    <tr><td><code>EffectYielded</code></td><td>Ballast yields an effect</td><td>effect_name, args_summary, depth</td></tr>
+    <tr><td><code>EffectHandled</code></td><td>handler returned</td><td>effect_name, result_summary, duration_ms</td></tr>
+    <tr><td><code>EffectReplayed</code></td><td>effect served from checkpoint</td><td>effect_name, step, depth</td></tr>
+    <tr><td><code>ActorCompleted</code></td><td>run ends (success or error)</td><td>result, gas_used, effects_performed, duration_ms</td></tr>
+  </table>
+  <p style="font-size:13px;color:var(--ink-faint)"><strong>run_id</strong> correlates all events in one trace across concurrent runs. <strong>actor_hash</strong> identifies the code version. <strong>depth</strong> distinguishes outer actor (0) from inner <code>chute_exec</code> programs (1+). The <code>effect_name</code> and <code>trigger_type</code> are <em>data</em>, not type variants — new ones need no code changes.</p>
+
+  <!-- durability -->
+  <h3 id="durability">Durability — surviving crashes without double-charging</h3>
+  <p>This is Yard's newest and most subtle feature. A Chute run that crashes mid-way should resume without re-running side effects. The seam is the <code>DurableStore</code> passed in every <code>RunConfig</code>.</p>
+
+  <div class="grid two">
+    <div>
+      <h4>The two-level model</h4>
+      <ol>
+        <li><strong>Chute/Ballast effects</strong> — checkpoint each effect handler result keyed by <code>"{step}:{effect_name}"</code>. On retry, replay stored values instead of calling handlers.</li>
+        <li><strong>Pig LLM turns</strong> — checkpoint each LLM response and tool result keyed by message index, so a crashed conversation resumes without re-calling the model.</li>
+      </ol>
+      <p>Both run inside <strong>gabsurd</strong> (Absurd) Postgres tasks. Transparent to the Chute program and the LLM.</p>
+    </div>
+    <div>
+      <h4>The principled error policy (ADR-0001)</h4>
+      <div class="callout key" style="margin-top:0">
+        <span class="tag">lookup vs record — asymmetric by design</span>
+        <strong>lookup is best-effort</strong> — "not found" is the normal first-run case; a corrupt/missing checkpoint just falls through to fresh execution. <strong>record is a guarantee</strong> — a store failure <em>surfaces and fails the Run</em>, because silently losing a checkpoint breaks the durability promise invisibly.
+      </div>
+      <p style="font-size:13px;color:var(--ink-faint)">This relies on the <strong>idempotent handler</strong> contract: handlers must be safe to run twice with the same inputs, because retry can double-execute the step whose checkpoint failed to save.</p>
+    </div>
+  </div>
+
+  <div class="filename">the durability type hierarchy</div>
+<pre><code><span class="cm">// runner talks to this — owns keyspace + codec</span>
+<span class="ty">DurableStore</span>(lookup, record)            <span class="cm">// yard/durability.gleam</span>
+   │  <span class="kw">from_checkpointer</span>(cp) wraps ↓
+   ▼
+<span class="ty">Checkpointer</span>(save, load)                <span class="cm">// yard/checkpoint.gleam — string→string KV</span>
+   │  implementations:
+   ├─ <span class="fn">in_memory()</span>                       <span class="cm">// tests (OTP-actor dict)</span>
+   └─ <span class="fn">gabsurd_checkpointer</span>              <span class="cm">// yard/gabsurd_checkpointer.gleam → Postgres</span></code></pre>
+
+  <!-- data -->
+  <h3 id="data">Data &amp; persistence — the two-database strategy (migration in flight)</h3>
+  <p>The intended split axis is <strong>agent-private storage vs. everything higher-level</strong> (see <code>knowledge/durable.md</code> § "Two-Database Strategy"): each agent keeps its own SQLite for private state; everything <em>above</em> the agent — platform registry, conversations, events, schedules, durability — is meant to live in PostgreSQL. <strong>The migration is mid-flight:</strong> both worlds coexist in the tree today.</p>
+
+  <div class="grid two">
+    <div class="card">
+      <span class="pill" style="background:#243459;color:var(--yard)">SQLite — staying</span>
+      <h4>Per-agent private storage</h4>
+      <p>One SQLite DB <strong>per agent</strong> for its own working state — the agent-scoped VFS and KV. Owned entirely by the agent via <code>pig/workspace</code>, not queryable from the platform layer. This half of the split is settled.</p>
+      <div class="files">pig/workspace (external repo)<br>hermes_agent handlers: read_file / write_file / recall / store</div>
+    </div>
+    <div class="card">
+      <span class="pill" style="background:#3a2342;color:var(--pig)">PostgreSQL — target</span>
+      <h4>Everything higher-level</h4>
+      <p>The gabsurd/Absurd schema (tasks, runs, checkpoints, events), <code>yard_events</code> (replaces JSONL), <code>conversations</code>, <code>pg_cron</code> schedules, and agent configuration. This is the production data store and what makes runs crash-resumable.</p>
+      <div class="files">sql/durable_schema.sql<br>pg_conversation / pg_events.gleam<br>pg_cron.gleam · gabsurd_checkpointer.gleam</div>
+    </div>
+  </div>
+
+  <div class="callout warn">
+    <span class="tag">⚠ Current vs target — read this before assuming what runs today</span>
+    <p style="margin:6px 0">The <strong>platform registry</strong> (agents, skills, schedules, deployments, runs, chat, providers) is <strong>still implemented in SQLite today</strong> — <code>db.gleam</code> is sqlight throughout, every function takes a <code>sqlight.Connection</code>, and <code>db.open()</code> opens a SQLite file. The Postgres modules (<code>pg_conversation</code>, <code>pg_events</code>, <code>pg_cron</code>) <strong>exist and are tested, but are not yet wired into production startup</strong> — they're referenced only from tests, not from <code>yard.start()</code>. So today: <em>SQLite registry + SQLite per-agent + Postgres for durability tests.</em> Target: <em>SQLite per-agent only, Postgres for everything else.</em></p>
+    <p style="margin:6px 0">Likewise the <strong>OTP cron engine is still present and still used</strong> (the hermes-agent example wires it up), while <code>pg_cron</code> — whose own doc says it "replaces the OTP cron engine" — is the in-flight replacement. See the scheduling section below.</p>
+  </div>
+
+  <div class="callout">
+    <span class="tag">⚠ Editing the SQLite schema</span>
+    Edit <code>sql/schema.sql</code> and <code>sql/queries.sql</code>, then run <code>mise run yard:gen</code> to regenerate <code>sql.gleam</code>. Never edit <code>sql.gleam</code> by hand — it's checked in only so <code>gleam build</code> works without parrot installed. Details in <code>yard/PARROT.md</code>.
+  </div>
+
+  <!-- cron -->
+  <h3 id="cron">Scheduling — two engines, one being retired</h3>
+  <p>There are <strong>two scheduler implementations</strong> in the tree — the codebase is moving from an in-process OTP actor to PostgreSQL-native scheduling.</p>
+
+  <div class="grid two">
+    <div class="card">
+      <span class="pill" style="background:var(--panel2);color:var(--ink-dim)">current</span>
+      <h4><code>cron_engine.gleam</code> — OTP actor</h4>
+      <p>A tick-based OTP actor that fires Chute skills. On each <code>tick</code>: load active schedules → filter those where <code>next_fire_at ≤ now</code> → for each, look up the skill, compile via <code>loader</code>, resolve handlers, run through <code>runner.run</code>, then reschedule. Still <strong>present and used</strong> by the hermes-agent example. Cron math from <code>automata</code>; <code>cron_time.gleam</code> bridges <code>birl</code> ↔ automata datetimes. Messages: <code>Register / ListSchedules / Cancel / Tick / Reload / Stop</code>.</p>
+    </div>
+    <div class="card">
+      <span class="pill" style="background:#3a2342;color:var(--pig)">target</span>
+      <h4><code>pg_cron.gleam</code> — PostgreSQL-native</h4>
+      <p>Stores schedules in PostgreSQL's <code>cron.job</code> table so they <strong>survive BEAM restarts</strong>. Each entry fires <code>absurd.spawn_task</code> directly into a gabsurd queue — no OTP tick loop, no in-process state. Its own module doc states it "replaces the OTP cron engine." Tested via <code>pg_cron_test.gleam</code> (with a <code>cron_test_stub.sql</code> mock of the extension), but <strong>not yet wired into production startup</strong>.</p>
+    </div>
+  </div>
+  <p style="font-size:13px;color:var(--ink-faint)"><code>durable.md</code> § Scheduling is explicit: <em>"pg_cron replaces the OTP cron engine … no OTP fallback."</em> Treat <code>cron_engine</code> as the present-day path and <code>pg_cron</code> as the destination.</p>
+
+  <!-- handler registry -->
+  <h4>Handler registry — effects meet their implementations</h4>
+  <p>Each agent declares effects in its Chute source and binds them to named handlers in the <code>agent_handlers</code> table (e.g. effect <code>fetch_issue</code> → handler <code>http_get_handler</code>). <code>handler_registry.gleam</code> maps those handler names to builder functions, and <code>resolve_for_agent</code> turns a row-set of bindings into the <code>Dict(String, EffectHandler)</code> the runner needs.</p>
+
+  <!-- ui -->
+  <h3 id="ui">The dashboard UI</h3>
+  <p><code>ui/server.gleam</code> is a <strong>mist</strong> HTTP server started via <code>yard.start_with_ui()</code>. It queries Postgres directly (not the SQLite registry) for runs, conversations, and events. Routes: <code>/</code> dashboard, <code>/runs</code>, <code>/runs/:id</code>, <code>/conversations</code>, <code>/conversations/:id</code>. HTML is server-rendered by <code>ui/template.gleam</code>; data fetched by <code>ui/queries.gleam</code>.</p>
+</section>
+
+<!-- 8. EXAMPLES -->
+<section id="examples">
+  <h2 class="title"><span class="num">08</span> The examples — how it all fits together</h2>
+  <p class="sub">Two reference apps. Read these to see Yard used end-to-end.</p>
+
+  <div class="grid two">
+    <div class="card">
+      <span class="pill" style="background:var(--panel2);color:var(--ink-dim)">examples/issue-triage</span>
+      <h4>GitHub tracking-issue sync</h4>
+      <p>A single file (<code>issue_triage.gleam</code>) that periodically scans a repo's tracking issues, fetches linked issue states via the GitHub API, asks a pig LLM agent to diff them, and logs the comment it <em>would</em> post.</p>
+      <p style="font-size:13px">The Chute actor is embedded as a string constant. Four real handlers (<code>fetch_issue</code>, <code>fetch_linked</code>, <code>run_agent</code>, <code>update_issue</code>) wire GitHub HTTP + pig. 14 tests cover the full pipeline. The clearest "hello world" for the stack.</p>
+      <div class="tag-row"><span class="chip c">chute actor</span><span class="chip y">runner.run</span><span class="chip">pig agent</span><span class="chip">cron trigger</span></div>
+    </div>
+    <div class="card">
+      <span class="pill" style="background:#3a2342;color:var(--pig)">examples/hermes-agent</span>
+      <h4>The 5-pillar agentic OS</h4>
+      <p>An LLM agent whose <strong>primary tool is <code>chute_exec</code></strong> — it writes Chute programs on the fly that run in Ballast's sandbox with Hermes effect handlers bridging to pig's workspace (VFS + KV).</p>
+      <p style="font-size:13px">Demonstrates the hub-and-spoke model: the LLM orchestrates by emitting scripts; effects <code>read_file/write_file/list_files/recall/store/emit_event</code> hit pig's SQLite workspace. Has a Telegram gateway (<code>gateway.gleam</code>) and a persistent session loop. <code>mise run hermes:run</code> to try it.</p>
+      <div class="tag-row"><span class="chip">chute_exec tool</span><span class="chip">LLM generates Chute</span><span class="chip">pig workspace VFS/KV</span><span class="chip">Telegram</span></div>
+    </div>
+  </div>
+  <div class="callout">
+    <span class="tag">The two patterns these teach</span>
+    <strong>issue-triage</strong> = a fixed Chute actor with pre-written handlers (deterministic orchestration). <strong>hermes-agent</strong> = an LLM that writes fresh Chute per turn, executed ad-hoc via <code>chute_exec</code> (dynamic, agent-driven). Real systems compose both.
+  </div>
+</section>
+
+<!-- 9. FLOWS -->
+<section id="flows">
+  <h2 class="title"><span class="num">09</span> End-to-end flows</h2>
+  <p class="sub">Trace a single run from trigger to result, and a crash-retry through durability.</p>
+
+  <h3>Flow A — a webhook triggers a Chute actor</h3>
+  <div class="vflow">
+    <div class="vstep"><span class="stepnum">1</span><strong>Trigger adapter</strong> receives an HTTP request → parses body into a <code>Value</code> env, generates a <code>run_id</code>.</div>
+    <div class="varr">▼</div>
+    <div class="vstep"><span class="stepnum">2</span><span class="mono">loader.load(source, path)</span> — parse + desugar + SHA-256 hash of S-expression → <code>LoadedActor</code>.</div>
+    <div class="varr">▼</div>
+    <div class="vstep"><span class="stepnum">3</span>Build <code>RunConfig</code> (program, env, gas, handlers dict, emit callback, trigger_type="webhook", store).</div>
+    <div class="varr">▼</div>
+    <div class="vstep"><span class="stepnum">4</span><span class="mono">runner.run(config)</span> — emit <code>ActorStarted</code>, hand program to Ballast.</div>
+    <div class="varr">▼</div>
+    <div class="vstep"><span class="stepnum">5</span>Ballast yields <code>Yielded("charge_card", [...], cont, gas)</code>.</div>
+    <div class="varr">▼</div>
+    <div class="vstep"><span class="stepnum">6</span>Runner emits <code>EffectYielded</code> → looks up <code>charge_card</code> handler → calls it (real Stripe API call).</div>
+    <div class="varr">▼</div>
+    <div class="vstep"><span class="stepnum">7</span>Runner emits <code>EffectHandled</code> → records result in store → <code>ballast.resume(cont, tx_id)</code>.</div>
+    <div class="varr">▼</div>
+    <div class="vstep"><span class="stepnum">8</span>Ballast evaluates more, eventually returns <code>EvalDone</code> → runner emits <code>ActorCompleted</code>, returns <code>Ok(value)</code>.</div>
+    <div class="varr">▼</div>
+    <div class="vstep"><span class="stepnum">9</span>Every event flowed: runner → dispatcher → <code>:telemetry</code> + JSONL session + Postgres <code>yard_events</code>.</div>
+  </div>
+
+  <h3>Flow B — a crash mid-run, then retry (durability)</h3>
+  <div class="grid two">
+    <div>
+      <h4>First attempt (crashes after step 1)</h4>
+      <div class="vflow">
+        <div class="vstep"><span class="stepnum">1</span><code>charge_card</code> handler runs ✓ → result <strong>recorded</strong> as checkpoint <code>"0:charge_card"</code>.</div>
+        <div class="varr">▼</div>
+        <div class="vstep"><span class="stepnum">2</span>Ballast resumes, yields <code>send_receipt</code>…</div>
+        <div class="varr">▼</div>
+        <div class="vstep" style="border-color:var(--err);color:var(--err)"><span class="stepnum">💥</span>BEAM node crashes. Nothing recorded for step 1's send yet.</div>
+      </div>
+    </div>
+    <div>
+      <h4>Retry (gabsurd reclaims the task)</h4>
+      <div class="vflow">
+        <div class="vstep"><span class="stepnum">1</span>Runner starts fresh, yields <code>charge_card</code> at step 0.</div>
+        <div class="varr">▼</div>
+        <div class="vstep"><span class="stepnum">2</span><code>store.lookup(0, "charge_card")</code> → <strong>Ok(Some(stored))</strong>. Emit <code>EffectReplayed</code>. <em>Handler NOT called again — no double-charge.</em></div>
+        <div class="varr">▼</div>
+        <div class="vstep"><span class="stepnum">3</span><code>ballast.resume</code> with stored value → yields <code>send_receipt</code> at step 1.</div>
+        <div class="varr">▼</div>
+        <div class="vstep"><span class="stepnum">4</span><code>lookup(1, "send_receipt")</code> → <code>None</code> (nothing stored). Runs the handler fresh, records it. Run completes. ✓</div>
+      </div>
+    </div>
+  </div>
+  <p style="font-size:13px;color:var(--ink-faint)">The key insight: because Ballast is a pure CPS evaluator and the continuation is just a closure, "resume" is deterministic — replaying the same checkpoints always reaches the same point. The idempotent-handler contract covers the one window where double-execution can still occur (step whose record failed before the crash).</p>
+</section>
+
+<!-- 10. DEV -->
+<section id="dev">
+  <h2 class="title"><span class="num">10</span> Developer workflow</h2>
+  <p class="sub">Everything runs through <code>mise</code>. The task definitions in <code>mise.toml</code> are the source of truth.</p>
+
+  <div class="filename">the commands you'll actually use</div>
+<pre><code><span class="cm"># one-time: install the toolchain (gleam, erlang, rebar3)</span>
+mise install
+
+<span class="cm"># the CI gate — MUST pass before every commit, no exceptions</span>
+mise run pre-commit        <span class="cm"># = check + format + build + test across all projects</span>
+
+<span class="cm"># run a single phase across all projects</span>
+mise run check   | mise run format | mise run build | mise run test
+
+<span class="cm"># scoped to one package</span>
+mise run chute:test    mise run ballast:check    mise run yard:build
+
+<span class="cm"># regenerate SQL codegen after editing schema.sql / queries.sql</span>
+mise run yard:gen
+
+<span class="cm"># try the example apps</span>
+mise run hermes:run          <span class="cm"># CLI agent demo</span>
+mise run hermes:gateway      <span class="cm"># Telegram gateway (needs TELEGRAM_BOT_TOKEN)</span>
+
+<span class="cm"># durability dev needs Postgres</span>
+bin/postgres.sh             <span class="cm"># starts a docker container, applies schemas</span></code></pre>
+
+  <div class="callout warn">
+    <span class="tag">⚠ Environment for LLM features</span>
+    The examples and pig integration expect an OpenAI-compatible endpoint (defaults to local Ollama at <code>localhost:11434/v1</code>). Set <code>OPENAI_COMPAT_BASE_URL</code>, <code>OPENAI_COMPAT_API_KEY</code>, <code>OPENAI_COMPAT_MODEL</code>, and <code>GITHUB_TOKEN</code> as needed.
+  </div>
+
+  <h4>Code search (from AGENTS.md)</h4>
+  <p>The repo recommends <code>semble search "describe what it does" ./path</code> for semantic lookup over grep, and <code>semble find-related file.gleam line ./path</code> to discover related code. Fall back to grep only for exhaustive literal matches.</p>
+</section>
+
+<!-- 11. GLOSSARY -->
+<section id="glossary">
+  <h2 class="title"><span class="num">11</span> Glossary</h2>
+  <p class="sub">The project's controlled vocabulary (canonicalised in <code>CONTEXT.md</code>). Using these terms correctly matters — they carry precise meaning.</p>
+  <table class="tbl">
+    <tr><th>Term</th><th>Means</th><th>Avoid saying</th></tr>
+    <tr><td><strong>Chute</strong></td><td>The pipeline-first language for LLM generation.</td><td>script, DSL, config</td></tr>
+    <tr><td><strong>Ballast</strong></td><td>The pure functional evaluator that cannot touch the outside world.</td><td>interpreter, VM, runtime</td></tr>
+    <tr><td><strong>Yard</strong></td><td>The host runtime that loops over Ballast and wires it to the real world.</td><td>server, platform, framework</td></tr>
+    <tr><td><strong>Actor</strong></td><td>A loaded Chute program, identified by <code>actor_path</code> (where) + <code>actor_hash</code> (what code).</td><td>agent, bot, worker</td></tr>
+    <tr><td><strong>Effect</strong></td><td>A capability a Chute program declares &amp; invokes via <code>perform</code>; the host decides what happens.</td><td>function, command, API call</td></tr>
+    <tr><td><strong>Run</strong></td><td>One invocation of an Actor through the Yard runner.</td><td>execution, session</td></tr>
+    <tr><td><strong>Checkpoint</strong></td><td>A stored effect result, keyed by position + name, enabling resume without re-executing side effects.</td><td>snapshot, cache</td></tr>
+    <tr><td><strong>Replay</strong></td><td>Feeding stored checkpoints to Ballast instead of calling handlers, so side effects aren't repeated on retry.</td><td>restore, fast-forward</td></tr>
+    <tr><td><strong>Idempotent handler</strong></td><td>A handler safe to run twice with the same inputs — the contract that makes durability correct.</td><td>pure function</td></tr>
+  </table>
+</section>
+
+<!-- 12. WHERE TO LOOK -->
+<section id="where">
+  <h2 class="title"><span class="num">12</span> Where to look — quick reference</h2>
+  <p class="sub">"I want to understand/change X — which file?"</p>
+  <table class="tbl">
+    <tr><th>I want to…</th><th>Go here</th></tr>
+    <tr><td>understand the language syntax &amp; grammar</td><td><code>knowledge/syntax.md</code> · <code>chute/src/chute/ast.gleam</code></td></tr>
+    <tr><td>see how a program is parsed</td><td><code>chute/src/chute/{lexer,parser,desugar}.gleam</code></td></tr>
+    <tr><td>understand the effect firewall / capability check</td><td><code>chute/src/chute/typecheck.gleam</code></td></tr>
+    <tr><td>understand how evaluation &amp; yield/resume works</td><td><code>ballast/src/ballast/eval.gleam</code> (CPS core) · <code>effect.gleam</code></td></tr>
+    <tr><td>see the value/runtime types</td><td><code>ballast/src/ballast/value.gleam</code></td></tr>
+    <tr><td>understand the main run loop</td><td><span class="chip y">yard/src/yard/runner.gleam</span> ★</td></tr>
+    <tr><td>see how actors are loaded &amp; hashed</td><td><code>yard/src/yard/loader.gleam</code></td></tr>
+    <tr><td>understand observability events</td><td><code>yard/src/yard/obs/{events,dispatcher,session}.gleam</code> · <code>knowledge/observability.md</code></td></tr>
+    <tr><td>understand durability / crash-resume</td><td><code>yard/src/yard/{durability,checkpoint,durable_handler}.gleam</code> · <code>knowledge/durable.md</code> · <code>docs/adr/0001-*.md</code></td></tr>
+    <tr><td>understand the database / storage split</td><td><code>yard/src/yard/db.gleam</code> (SQLite, current) · <code>pg_*.gleam</code> (Postgres target) · <code>knowledge/durable.md</code> § "Two-Database Strategy"</td></tr>
+    <tr><td>understand cron scheduling</td><td><code>yard/src/yard/cron_engine.gleam</code> (current OTP actor) · <code>pg_cron.gleam</code> (Postgres-native target) · <code>knowledge/durable.md</code> § Scheduling</td></tr>
+    <tr><td>understand how effects map to real code</td><td><code>yard/src/yard/handler_registry.gleam</code> · the example <code>*_handler()</code> fns</td></tr>
+    <tr><td>see a complete working example</td><td><code>examples/issue-triage/src/issue_triage.gleam</code></td></tr>
+    <tr><td>see an LLM that writes Chute dynamically</td><td><code>examples/hermes-agent/src/hermes_agent/chute_exec.gleam</code></td></tr>
+    <tr><td>understand the design philosophy</td><td><code>README.md</code> · <code>CONTEXT.md</code> · <code>IDEA.md</code> · <code>knowledge/projectnaming.md</code></td></tr>
+    <tr><td>regenerate SQL codegen</td><td><code>mise run yard:gen</code> (see <code>yard/PARROT.md</code>)</td></tr>
+    <tr><td>find what build/test commands exist</td><td><code>mise.toml</code></td></tr>
+  </table>
+
+  <div class="callout key">
+    <span class="tag">Suggested reading order for a new dev</span>
+    <code>README.md</code> (the architecture) → <code>CONTEXT.md</code> (the vocabulary) → <code>chute/src/chute/ast.gleam</code> (the data contract) → <code>ballast/src/ballast/eval.gleam</code> (the evaluator) → <span class="chip y">yard/src/yard/runner.gleam</span> (the loop) → <code>examples/issue-triage</code> (it all working together).
+  </div>
+</section>
+
+<div class="foot">
+  Generated repo walkthrough · Chute · Ballast · Yard &nbsp;·&nbsp; Gleam on the BEAM
+</div>
+
+</main>
+</div>
+</body>
+</html>
