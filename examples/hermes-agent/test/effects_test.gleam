@@ -476,11 +476,20 @@ pub fn list_crons_handler_empty_test() {
   case testing.try_db() {
     Ok(#(_, check_pid)) -> {
       with_pg_db(fn(pg_db, _queue_name) {
+        // Snapshot existing hermes_ jobs so we know the baseline
+        let baseline_count = case pg_cron.list_jobs(pg_db) {
+          Ok(jobs) ->
+            jobs
+            |> list.filter(fn(j) { string.starts_with(j.job_name, "hermes_") })
+            |> list.length
+          Error(_) -> 0
+        }
+
         let handler = effects.list_crons_handler(pg_db)
 
         let result = handler("list_crons", [])
         let assert Ok(OkVal(ListVal(items))) = result
-        let assert 0 = list.length(items)
+        let assert baseline_count = list.length(items)
       })
       process.send_exit(check_pid)
       Nil

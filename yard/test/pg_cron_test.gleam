@@ -33,10 +33,21 @@ fn with_db(test_fn: fn(client.Db, String) -> a) -> a {
   result
 }
 
-/// Clean up all test cron schedules
+/// Clean up only yard_test_ cron schedules created by this suite
 fn unschedule_all(db: client.Db) -> Nil {
-  let _ = pg_cron.unschedule_all(db)
-  Nil
+  case pg_cron.list_jobs(db) {
+    Ok(jobs) ->
+      list.each(jobs, fn(j) {
+        case string.starts_with(j.job_name, "yard_test_") {
+          True -> {
+            let _ = pg_cron.unschedule(db, job_name: j.job_name)
+            Nil
+          }
+          False -> Nil
+        }
+      })
+    Error(_) -> Nil
+  }
 }
 
 fn unique_job_name() -> String {

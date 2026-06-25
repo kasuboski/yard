@@ -114,7 +114,7 @@ fn provider_decoder() -> dyn_decode.Decoder(Provider) {
 /// Get the current provider, if one exists.
 pub fn get_provider(db: Db) -> Result(Option(Provider), Nil) {
   let sql =
-    "SELECT id, api_key, base_url, model FROM providers LIMIT 1"
+    "SELECT id, api_key, base_url, model FROM providers WHERE id = 'default'"
   case client.query_many(db, #(sql, [], provider_decoder())) {
     Ok([provider]) -> Ok(Some(provider))
     Ok([]) -> Ok(None)

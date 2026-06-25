@@ -275,6 +275,9 @@ pub fn save_provider_replaces_existing_test() {
       db.save_provider(db, "sk-new", "https://new.example.com", "gpt-4")
     let assert "sk-new" = p2.api_key
     let assert "gpt-4" = p2.model
+    let assert Ok(option.Some(found)) = db.get_provider(db)
+    let assert "sk-new" = found.api_key
+    let assert "gpt-4" = found.model
   })
 }
 
