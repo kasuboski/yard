@@ -202,7 +202,7 @@ pub fn non_durable_run_executes_handlers_test() {
   let assert Error(_) = process.receive(call_count, 100)
 }
 
-/// Handler errors are not recorded — the run fails and the store stays empty.
+/// Handler errors are not recorded — the run fails with the handler error.
 pub fn handler_error_fails_run_test() {
   let subject = process.new_subject()
   let store = durability.in_memory()

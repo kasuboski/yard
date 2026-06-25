@@ -9,7 +9,6 @@
 ////   - Global DB (this module): agents, skills, runs, chat in PostgreSQL
 ////   - Per-agent workspace: VFS + KV (pig/workspace, one SQLite per agent)
 ////
-//// NOTE: Schedule-related functions are left as stubs for the other worker (pg_cron).
 //// NOTE: migrate() is a no-op now - schema is applied via bin/postgres.sh
 
 import gleam/dynamic/decode as dyn_decode
@@ -57,18 +56,6 @@ pub type Skill {
     chute_source: String,
     tags: String,
     status: String,
-  )
-}
-
-pub type Schedule {
-  Schedule(
-    id: String,
-    agent_id: Option(String),
-    skill_id: String,
-    cron_expr: String,
-    status: String,
-    last_fired_at: Option(Int),
-    next_fire_at: Int,
   )
 }
 
@@ -146,35 +133,27 @@ pub fn save_provider(
   base_url: String,
   model: String,
 ) -> Result(Provider, Nil) {
-  let del_sql = "DELETE FROM providers"
-  case client.exec(db, #(del_sql, [])) {
+  let sql =
+    "
+    INSERT INTO providers (id, api_key, base_url, model)
+    VALUES ('default', $1, $2, $3)
+    ON CONFLICT (id) DO UPDATE
+    SET api_key = EXCLUDED.api_key,
+        base_url = EXCLUDED.base_url,
+        model = EXCLUDED.model
+    "
+  case client.exec(db, #(sql, [
+    dev.ParamString(api_key),
+    dev.ParamString(base_url),
+    dev.ParamString(model),
+  ])) {
+    Ok(_) -> Ok(Provider("default", api_key, base_url, model))
     Error(e) -> {
       logging.log(
         logging.Error,
-        "db.save_provider delete failed: " <> error_to_string(e),
+        "db.save_provider failed: " <> error_to_string(e),
       )
       Error(Nil)
-    }
-    Ok(_) -> {
-      let ins_sql =
-        "
-        INSERT INTO providers (id, api_key, base_url, model)
-        VALUES ('default', $1, $2, $3)
-        "
-      case client.exec(db, #(ins_sql, [
-        dev.ParamString(api_key),
-        dev.ParamString(base_url),
-        dev.ParamString(model),
-      ])) {
-        Ok(_) -> Ok(Provider("default", api_key, base_url, model))
-        Error(e) -> {
-          logging.log(
-            logging.Error,
-            "db.save_provider insert failed: " <> error_to_string(e),
-          )
-          Error(Nil)
-        }
-      }
     }
   }
 }
@@ -505,50 +484,6 @@ pub fn deactivate_skill(db: Db, id: String) -> Result(Nil, Nil) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// Schedule Queries (STUBS - other worker handles pg_cron)
-// ═══════════════════════════════════════════════════════════════
-
-// These functions are left as stubs for compatibility.
-// The actual scheduling functionality is moving to pg_cron.
-// TODO: These will be removed by the parallel worker.
-
-pub fn list_active_schedules(_db: Db) -> Result(List(Schedule), Nil) {
-  logging.log(logging.Warning, "db.list_active_schedules is deprecated - use pg_cron")
-  Ok([])
-}
-
-pub fn get_schedule(_db: Db, _id: String) -> Result(Option(Schedule), Nil) {
-  logging.log(logging.Warning, "db.get_schedule is deprecated - use pg_cron")
-  Ok(None)
-}
-
-pub fn insert_schedule(
-  _db: Db,
-  _agent_id: Option(String),
-  _skill_id: String,
-  _cron_expr: String,
-  _next_fire_at: Int,
-) -> Result(String, Nil) {
-  logging.log(logging.Warning, "db.insert_schedule is deprecated - use pg_cron")
-  Ok("")
-}
-
-pub fn update_schedule_fire(
-  _db: Db,
-  _id: String,
-  _last_fired_at: Option(Int),
-  _next_fire_at: Int,
-) -> Result(Nil, Nil) {
-  logging.log(logging.Warning, "db.update_schedule_fire is deprecated - use pg_cron")
-  Ok(Nil)
-}
-
-pub fn deactivate_schedule(_db: Db, _id: String) -> Result(Nil, Nil) {
-  logging.log(logging.Warning, "db.deactivate_schedule is deprecated - use pg_cron")
-  Ok(Nil)
-}
-
-// ═══════════════════════════════════════════════════════════════
 // Run Queries
 // ═══════════════════════════════════════════════════════════════
 
@@ -564,9 +499,10 @@ pub fn get_actor_runs(
       id,
       status,
       trigger_type,
+      trigger_source,
       COALESCE(result, '') as result,
       COALESCE(duration_ms, 0) as duration_ms,
-      CAST(EXTRACT(EPOCH FROM started_at) AS BIGINT) * 1000 as started_at
+      CAST(EXTRACT(EPOCH FROM started_at) * 1000 AS BIGINT) as started_at
     FROM runs
     WHERE agent_id = $1
     ORDER BY started_at DESC
@@ -576,12 +512,13 @@ pub fn get_actor_runs(
     use id <- dyn_decode.field(0, dyn_decode.string)
     use status <- dyn_decode.field(1, dyn_decode.string)
     use trigger_type <- dyn_decode.field(2, dyn_decode.string)
-    use result <- dyn_decode.field(3, dyn_decode.string)
-    use duration_ms <- dyn_decode.field(4, dyn_decode.int)
-    use started_at <- dyn_decode.field(5, dyn_decode.int)
+    use trigger_source <- dyn_decode.field(3, dyn_decode.string)
+    use result <- dyn_decode.field(4, dyn_decode.string)
+    use duration_ms <- dyn_decode.field(5, dyn_decode.int)
+    use started_at <- dyn_decode.field(6, dyn_decode.int)
     dyn_decode.success(
       Run(
-        id:, status:, trigger_type:, trigger_source: "", result:, duration_ms:, started_at:,
+        id:, status:, trigger_type:, trigger_source:, result:, duration_ms:, started_at:,
       )
     )
   }
@@ -811,7 +748,7 @@ pub fn get_recent_messages(
 ) -> Result(List(ChatMessage), Nil) {
   let sql =
     "
-    SELECT id, content, role, CAST(EXTRACT(EPOCH FROM created_at) AS BIGINT) * 1000 as created_at
+    SELECT id, content, role, CAST(EXTRACT(EPOCH FROM created_at) * 1000 AS BIGINT) as created_at
     FROM chat_messages
     WHERE session_id = $1
     ORDER BY created_at DESC
@@ -903,7 +840,7 @@ pub fn get_chat_messages(
 ) -> Result(List(ChatMessage), Nil) {
   let sql =
     "
-    SELECT id, content, role, CAST(EXTRACT(EPOCH FROM created_at) AS BIGINT) * 1000 as created_at
+    SELECT id, content, role, CAST(EXTRACT(EPOCH FROM created_at) * 1000 AS BIGINT) as created_at
     FROM chat_messages
     WHERE session_id = $1
     ORDER BY created_at ASC
