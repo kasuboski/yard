@@ -276,8 +276,7 @@ fn ensure_user_key(
     False -> ctx
     True -> {
       let user_key = user_key_from_update(ctx.update)
-      // Stop the pending agent and create a proper session
-      pig.stop(ctx.session.agent)
+      // Create a proper session for this user
       case
         session.create(
           config.session_config,
