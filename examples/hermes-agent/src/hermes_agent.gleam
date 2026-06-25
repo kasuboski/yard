@@ -182,14 +182,14 @@ pub fn main() {
   // Stop the session, give Yard a moment to flush pending events,
   // then stop the dispatcher. The UI server runs until the VM exits.
   session.stop(sess)
-  process.sleep(200)
-  process.send(yard_dispatcher, dispatcher.Stop)
   io.println("")
   io.println("Observability: " <> yard_session_path)
   io.println("Messages:      PostgreSQL conversations table")
   io.println("Events:        PostgreSQL yard_events table")
-  io.println("Dashboard:     http://localhost:" <> int_to_string(ui))
-  io.println("Done.")
+  io.println("")
+  io.println("Dashboard is live at http://localhost:" <> int_to_string(ui))
+  io.println("Press Ctrl+C to stop.")
+  process.sleep_forever()
 }
 
 fn int_to_string(i: Int) -> String {
