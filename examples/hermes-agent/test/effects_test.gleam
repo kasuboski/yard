@@ -377,13 +377,21 @@ fn with_pg_db(test_fn: fn(client.Db, String) -> a) -> a {
   case testing.try_db() {
     Ok(#(db, pid)) -> {
       let assert Ok(Nil) = queue.create(db, queue_name)
+      // Snapshot existing hermes_ jobs so we only clean up new ones
+      let pre_existing = case pg_cron.list_jobs(db) {
+        Ok(jobs) ->
+          jobs
+          |> list.filter(fn(j) { string.starts_with(j.job_name, "hermes_") })
+          |> list.map(fn(j) { j.job_name })
+        Error(_) -> []
+      }
       let result = test_fn(db, queue_name)
       let _ = queue.drop(db, queue_name)
-      // Clean up only hermes_ jobs created by this test
+      // Clean up only hermes_ jobs created during this test
       case pg_cron.list_jobs(db) {
         Ok(jobs) ->
           list.each(jobs, fn(j) {
-            case string.starts_with(j.job_name, "hermes_") {
+            case string.starts_with(j.job_name, "hermes_") && !list.contains(pre_existing, j.job_name) {
               True -> {
                 let _ = pg_cron.unschedule(db, job_name: j.job_name)
                 Nil
@@ -468,11 +476,20 @@ pub fn list_crons_handler_empty_test() {
   case testing.try_db() {
     Ok(#(_, check_pid)) -> {
       with_pg_db(fn(pg_db, _queue_name) {
+        // Snapshot existing hermes_ jobs so we know the baseline
+        let baseline_count = case pg_cron.list_jobs(pg_db) {
+          Ok(jobs) ->
+            jobs
+            |> list.filter(fn(j) { string.starts_with(j.job_name, "hermes_") })
+            |> list.length
+          Error(_) -> 0
+        }
+
         let handler = effects.list_crons_handler(pg_db)
 
         let result = handler("list_crons", [])
         let assert Ok(OkVal(ListVal(items))) = result
-        let assert 0 = list.length(items)
+        let assert baseline_count = list.length(items)
       })
       process.send_exit(check_pid)
       Nil

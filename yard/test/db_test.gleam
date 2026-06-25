@@ -107,52 +107,6 @@ pub fn deactivate_skill_sets_inactive_test() {
     let assert "inactive" = skill.status
   })
 }
-
-// ═══════════════════════════════════════════════════════════════
-// Schedules (deprecated - stub tests pass)
-// ═══════════════════════════════════════════════════════════════
-
-pub fn insert_schedule_creates_record_test() {
-  with_db(fn(db) {
-    let assert Ok(skill_id) =
-      db.insert_skill(db, "cron_skill", "desc", "source", "[]")
-    // Schedule functions are stubs now - they return empty/nil
-    let assert Ok(_id) =
-      db.insert_schedule(db, option.None, skill_id, "*/5 * * * *", 1000)
-    // Stub returns empty string
-  })
-}
-
-pub fn get_schedule_by_id_test() {
-  with_db(fn(db) {
-    // Schedule functions are stubs - verify they don't crash
-    let assert Ok(option.None) = db.get_schedule(db, "some-id")
-  })
-}
-
-pub fn list_active_schedules_returns_empty_test() {
-  with_db(fn(db) {
-    // Schedule functions are stubs - should return empty list
-    let assert Ok([]) = db.list_active_schedules(db)
-  })
-}
-
-pub fn update_schedule_fire_sets_timestamps_test() {
-  with_db(fn(db) {
-    // Stub function - should just return Ok(Nil)
-    let assert Ok(Nil) =
-      db.update_schedule_fire(db, "some-id", option.Some(100), 200)
-  })
-}
-
-pub fn deactivate_schedule_test() {
-  with_db(fn(db) {
-    // Stub function - should just return Ok(Nil)
-    let assert Ok(Nil) = db.deactivate_schedule(db, "some-id")
-  })
-}
-
-// ═══════════════════════════════════════════════════════════════
 // Runs
 // ═══════════════════════════════════════════════════════════════
 
@@ -321,6 +275,9 @@ pub fn save_provider_replaces_existing_test() {
       db.save_provider(db, "sk-new", "https://new.example.com", "gpt-4")
     let assert "sk-new" = p2.api_key
     let assert "gpt-4" = p2.model
+    let assert Ok(option.Some(found)) = db.get_provider(db)
+    let assert "sk-new" = found.api_key
+    let assert "gpt-4" = found.model
   })
 }
 

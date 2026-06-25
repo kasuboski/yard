@@ -4,6 +4,7 @@
 //// pg_cron.schedule() creates entries in cron.job that fire gabsurd spawn_task
 //// directly, surviving BEAM restarts.
 
+import gleam/erlang/process
 import gleam/int
 import gleam/json
 import gleam/string
@@ -13,7 +14,7 @@ import gleeunit/should
 import gabsurd/client
 import gabsurd/queue
 import yard/pg_cron
-import testing
+const db_url = "postgresql://gabsurd:gabsurd@127.0.0.1:5432/gabsurd"
 
 
 pub fn main() {
@@ -22,19 +23,31 @@ pub fn main() {
 
 fn with_db(test_fn: fn(client.Db, String) -> a) -> a {
   let queue_name = "cron_test_" <> int.to_string(client.unique_integer())
-  testing.with_pg_db(fn(db) {
-    let assert Ok(Nil) = queue.create(db, queue_name)
-    let result = test_fn(db, queue_name)
-    let _ = queue.drop(db, queue_name)
-    let _ = unschedule_all(db)
-    result
-  })
+  let assert Ok(started) = client.start(db_url)
+  let db = started.data
+  let assert Ok(Nil) = queue.create(db, queue_name)
+  let result = test_fn(db, queue_name)
+  let _ = queue.drop(db, queue_name)
+  let _ = unschedule_all(db)
+  process.send_exit(started.pid)
+  result
 }
 
-/// Clean up all test cron schedules
+/// Clean up only yard_test_ cron schedules created by this suite
 fn unschedule_all(db: client.Db) -> Nil {
-  let _ = pg_cron.unschedule_all(db)
-  Nil
+  case pg_cron.list_jobs(db) {
+    Ok(jobs) ->
+      list.each(jobs, fn(j) {
+        case string.starts_with(j.job_name, "yard_test_") {
+          True -> {
+            let _ = pg_cron.unschedule(db, job_name: j.job_name)
+            Nil
+          }
+          False -> Nil
+        }
+      })
+    Error(_) -> Nil
+  }
 }
 
 fn unique_job_name() -> String {
