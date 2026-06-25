@@ -4,13 +4,13 @@
 //// Run with: bin/postgres.sh && cd yard && gleam test
 
 import birl
+import gabsurd/client
 import gleam/list
 import gleam/option
 import gleam/string
 import gleeunit
-import gabsurd/client
-import yard/db
 import testing
+import yard/db
 
 pub fn main() {
   gleeunit.main()
@@ -99,14 +99,14 @@ pub fn update_skill_changes_description_test() {
 
 pub fn deactivate_skill_sets_inactive_test() {
   with_db(fn(db) {
-    let assert Ok(id) =
-      db.insert_skill(db, "my_skill", "desc", "source", "[]")
+    let assert Ok(id) = db.insert_skill(db, "my_skill", "desc", "source", "[]")
     let assert Ok(Nil) = db.deactivate_skill(db, id)
     let assert Ok(found) = db.get_skill(db, id)
     let assert option.Some(skill) = found
     let assert "inactive" = skill.status
   })
 }
+
 // Runs
 // ═══════════════════════════════════════════════════════════════
 
@@ -303,8 +303,7 @@ pub fn get_or_create_session_returns_existing_test() {
 pub fn save_and_get_chat_messages_test() {
   with_db(fn(db) {
     let assert Ok(session_id) = db.get_or_create_session(db)
-    let assert Ok(Nil) =
-      db.save_chat_message(db, session_id, "user", "Hello!")
+    let assert Ok(Nil) = db.save_chat_message(db, session_id, "user", "Hello!")
     let assert Ok(Nil) =
       db.save_chat_message(db, session_id, "assistant", "Hi there!")
     let assert Ok(messages) = db.get_chat_messages(db, session_id)

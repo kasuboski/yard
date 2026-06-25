@@ -3,18 +3,16 @@
 //// Starts the UI server and makes HTTP requests to verify it serves pages.
 //// Requires: docker container running (bin/postgres.sh)
 
-import gleam/int
+import gabsurd/client
 import gleam/http/request
 import gleam/http/response
 import gleam/httpc
+import gleam/int
 import gleam/string
 import gleeunit
 import gleeunit/should
-import gabsurd/client
-import gabsurd/queue
-import yard/ui/server
 import testing
-
+import yard/ui/server
 
 pub fn main() {
   gleeunit.main()
@@ -22,19 +20,13 @@ pub fn main() {
 
 fn with_server(test_fn: fn(Int) -> a) -> a {
   let port = 8390 + int.absolute_value(client.unique_integer()) % 100
-  let queue_name = "ui_test_" <> int.to_string(client.unique_integer())
   testing.with_pg_db(fn(db) {
-    let assert Ok(Nil) = queue.create(db, queue_name)
+    // Start the UI server — ignore failures (the server may already be bound)
+    let _ = server.start(db:, port:)
+    // Give the server a moment to start
+    timer_sleep(200)
 
-  // Start the UI server — ignore failures (the server may already be bound)
-  let _ = server.start(db:, queue_name:, port:)
-  // Give the server a moment to start
-  timer_sleep(200)
-
-  let result = test_fn(port)
-
-    let _ = queue.drop(db, queue_name)
-    result
+    test_fn(port)
   })
 }
 
@@ -69,7 +61,9 @@ pub fn dashboard_served_test() {
 /// Unknown paths return 404 status.
 pub fn not_found_test() {
   with_server(fn(port) {
-    case http_get("http://localhost:" <> int.to_string(port) <> "/nonexistent") {
+    case
+      http_get("http://localhost:" <> int.to_string(port) <> "/nonexistent")
+    {
       Ok(resp) -> {
         should.equal(resp.status, 404)
       }

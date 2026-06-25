@@ -16,13 +16,13 @@
 ////   3. If no DB session, falls through to default_session() with "pending" user_key
 ////   4. handle_text detects "pending" and creates proper session with real user_key
 
+import gabsurd/client.{type Db}
 import gleam/int
 import gleam/io
 import gleam/option
 import gleam/string
 import pig
 import sqlight
-import gabsurd/client.{type Db}
 import telega/api
 import telega/bot
 import telega/model/types
@@ -30,7 +30,6 @@ import telega/router
 import telega/update
 
 import hermes_agent/session.{type HermesSession, type SessionConfig}
-import yard/db
 
 // ═══════════════════════════════════════════════════════════════
 // Config
@@ -190,9 +189,11 @@ fn handle_new(
     // Fix "pending" user_key if needed
     let ctx = ensure_user_key(config, ctx)
 
-    case session.reset(config.session_config, ctx.session) {
+    case session.reset(config.session_config, ctx.session, config.global_conn) {
       Ok(new_session) -> {
-        io.println("[/new] Reset OK, new session: " <> new_session.session_id)
+        io.println(
+          "[/new] Reset OK, new conversation: " <> new_session.conversation_id,
+        )
         case bot.next_session(ctx, new_session) {
           Ok(ctx) -> {
             let _ = send_reply(ctx, "Starting fresh! Workspace preserved.")
@@ -277,7 +278,6 @@ fn ensure_user_key(
       let user_key = user_key_from_update(ctx.update)
       // Stop the pending agent and create a proper session
       pig.stop(ctx.session.agent)
-      let _ = db.complete_session(config.global_conn, ctx.session.session_id)
       case
         session.create(
           config.session_config,

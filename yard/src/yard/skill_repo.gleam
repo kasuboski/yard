@@ -3,10 +3,10 @@
 //// Provides register/lookup/list/deactivate operations for skills.
 //// Skills are reusable Chute programs stored in the global DB.
 
+import gabsurd/client.{type Db}
 import gleam/json
 import gleam/list
 import gleam/option
-import gabsurd/client.{type Db}
 import yard/db
 
 // ═══════════════════════════════════════════════════════════════

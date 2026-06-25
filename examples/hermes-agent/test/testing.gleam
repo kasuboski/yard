@@ -3,8 +3,8 @@
 //// Each test gets its own connection pool, runs against TRUNCATEd tables,
 //// then closes the pool to free connections.
 
-import gleam/erlang/process
 import gabsurd/client.{type Db}
+import gleam/erlang/process
 
 const db_url = "postgresql://gabsurd:gabsurd@127.0.0.1:5432/gabsurd"
 
@@ -43,7 +43,7 @@ pub fn clean_registry(db: Db) -> Nil {
     client.exec(
       db,
       #(
-        "TRUNCATE TABLE agent_handlers, agents, skills, deployments, runs, chat_messages, chat_sessions, providers RESTART IDENTITY CASCADE",
+        "TRUNCATE TABLE agent_handlers, agents, skills, deployments, runs, chat_messages, chat_sessions, providers, conversations, yard_events RESTART IDENTITY CASCADE",
         [],
       ),
     )

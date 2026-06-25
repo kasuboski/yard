@@ -5,15 +5,13 @@
 //// Each message is checkpointed as "msg:{N}". On retry, the message log
 //// is rebuilt from checkpoints. The last message determines what happens next.
 
+import gleam/dynamic/decode
 import gleam/int
 import gleam/json
 import gleam/list
 import gleam/option.{type Option}
-import gleam/dynamic/decode
 import gleam/result
-import pig/ai/message.{
-  type Message, Assistant, System, Tool, User,
-}
+import pig/ai/message.{type Message, Assistant, System, Tool, User}
 import pig/ai/stop_reason
 import yard/checkpoint.{type Checkpointer}
 
@@ -87,7 +85,11 @@ pub fn save_message(
   index: Int,
   msg: Message,
 ) -> Result(Nil, checkpoint.CheckpointError) {
-  checkpoint.save(cp, "msg:" <> int.to_string(index), message_to_json_string(msg))
+  checkpoint.save(
+    cp,
+    "msg:" <> int.to_string(index),
+    message_to_json_string(msg),
+  )
 }
 
 /// Save all messages as checkpoints msg:0 through msg:N.
@@ -118,9 +120,7 @@ fn save_messages_loop(
 /// Used for storing conversation state in the conversations table.
 pub fn messages_to_json_string(messages: List(Message)) -> String {
   json.to_string(
-    json.array(from: messages, of: fn(msg) {
-      message_to_json(msg)
-    }),
+    json.array(from: messages, of: fn(msg) { message_to_json(msg) }),
   )
 }
 
@@ -168,20 +168,14 @@ fn message_to_json(msg: Message) -> json.Json {
         #("role", json.string("assistant")),
         #("content", json.string(content)),
         #("tool_calls", json.array(from: tool_calls, of: tool_call_to_json)),
-        #(
-          "thinking",
-          case thinking {
-            option.Some(t) -> json.string(t.content)
-            option.None -> json.null()
-          },
-        ),
-        #(
-          "stop_reason",
-          case sr {
-            option.Some(r) -> json.string(stop_reason.to_string(r))
-            option.None -> json.string("")
-          },
-        ),
+        #("thinking", case thinking {
+          option.Some(t) -> json.string(t.content)
+          option.None -> json.null()
+        }),
+        #("stop_reason", case sr {
+          option.Some(r) -> json.string(stop_reason.to_string(r))
+          option.None -> json.string("")
+        }),
       ])
     Tool(tool_call_id, content) ->
       json.object([

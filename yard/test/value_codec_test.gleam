@@ -35,7 +35,10 @@ pub fn float_round_trip_test() {
 }
 
 pub fn string_round_trip_test() {
-  should.equal(round_trip(StringVal("hello world")), Ok(StringVal("hello world")))
+  should.equal(
+    round_trip(StringVal("hello world")),
+    Ok(StringVal("hello world")),
+  )
 }
 
 pub fn string_with_special_chars_test() {
@@ -62,7 +65,10 @@ pub fn ok_round_trip_test() {
 }
 
 pub fn error_round_trip_test() {
-  should.equal(round_trip(ErrorVal(StringVal("oops"))), Ok(ErrorVal(StringVal("oops"))))
+  should.equal(
+    round_trip(ErrorVal(StringVal("oops"))),
+    Ok(ErrorVal(StringVal("oops"))),
+  )
 }
 
 pub fn some_round_trip_test() {
@@ -96,17 +102,21 @@ pub fn record_round_trip_test() {
 // ── Nested structures ────────────────────────────────────────────────
 
 pub fn nested_list_of_records_test() {
-  let v = ListVal([
-    RecordVal([#("x", IntVal(1)), #("y", IntVal(2))]),
-    RecordVal([#("x", IntVal(3)), #("y", IntVal(4))]),
-  ])
+  let v =
+    ListVal([
+      RecordVal([#("x", IntVal(1)), #("y", IntVal(2))]),
+      RecordVal([#("x", IntVal(3)), #("y", IntVal(4))]),
+    ])
   should.equal(round_trip(v), Ok(v))
 }
 
 pub fn deeply_nested_test() {
-  let v = OkVal(ListVal([
-    RecordVal([#("items", ListVal([StringVal("a"), StringVal("b")]))]),
-  ]))
+  let v =
+    OkVal(
+      ListVal([
+        RecordVal([#("items", ListVal([StringVal("a"), StringVal("b")]))]),
+      ]),
+    )
   should.equal(round_trip(v), Ok(v))
 }
 

@@ -9,13 +9,13 @@
 //// From DURABLE.md Component 6: Handler Registry & Worker Context.
 
 import ballast/value
+import gabsurd/context.{type Context}
+import gabsurd/worker.{type Handler, type HandlerResult}
 import gleam/bit_array
 import gleam/dict
 import gleam/dynamic/decode
 import gleam/json
 import gleam/option
-import gabsurd/context.{type Context}
-import gabsurd/worker.{type Handler, type HandlerResult}
 import yard/durability
 import yard/gabsurd_checkpointer
 import yard/loader
@@ -38,14 +38,8 @@ pub type TaskParams {
 /// The handler function receives a gabsurd Context. At execution time,
 /// it reads agent_id + user_key from task params, resolves handlers from
 /// the registry, and runs the Chute program with durability.
-pub fn chute_handler(
-  run_fn run_fn: fn(Context) -> HandlerResult,
-) -> Handler {
-  worker.Handler(
-    task_name: "run-chute",
-    execute: run_fn,
-    on_error: option.None,
-  )
+pub fn chute_handler(run_fn run_fn: fn(Context) -> HandlerResult) -> Handler {
+  worker.Handler(task_name: "run-chute", execute: run_fn, on_error: option.None)
 }
 
 /// Execute a Chute program inside a gabsurd task.
@@ -87,26 +81,26 @@ pub fn execute_chute(
 
   case runner.run(config) {
     Ok(result) ->
-      worker.Complete(json.object([
-        #("ok", json.bool(True)),
-        #("result", value_codec.encode(result)),
-      ]))
+      worker.Complete(
+        json.object([
+          #("ok", json.bool(True)),
+          #("result", value_codec.encode(result)),
+        ]),
+      )
     Error(error) ->
-      worker.Complete(json.object([
-        #("ok", json.bool(False)),
-        #("error", json.string(value.error_to_string(error))),
-      ]))
+      worker.Complete(
+        json.object([
+          #("ok", json.bool(False)),
+          #("error", json.string(value.error_to_string(error))),
+        ]),
+      )
   }
 }
 
 /// Parse task params from the gabsurd task's JSON params string.
 pub fn parse_params(params_json: String) -> TaskParams {
-  let fallback = TaskParams(
-    agent_id: "",
-    user_key: "",
-    actor_source: "",
-    env_json: "null",
-  )
+  let fallback =
+    TaskParams(agent_id: "", user_key: "", actor_source: "", env_json: "null")
   case json.parse(params_json, params_decoder()) {
     Ok(p) -> p
     Error(_) -> fallback
@@ -118,10 +112,5 @@ fn params_decoder() -> decode.Decoder(TaskParams) {
   use user_key <- decode.field("user_key", decode.string)
   use actor_source <- decode.field("actor_source", decode.string)
   use env_json <- decode.optional_field("env_json", "null", decode.string)
-  decode.success(TaskParams(
-    agent_id:,
-    user_key:,
-    actor_source:,
-    env_json:,
-  ))
+  decode.success(TaskParams(agent_id:, user_key:, actor_source:, env_json:))
 }

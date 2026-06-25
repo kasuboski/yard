@@ -16,9 +16,13 @@ pub fn main() {
 
 pub fn save_then_load_returns_value_test() {
   let cp = checkpoint.in_memory()
-  let _ = checkpoint.save(cp, "0:greet", "{\"type\":\"string\",\"value\":\"hi\"}")
+  let _ =
+    checkpoint.save(cp, "0:greet", "{\"type\":\"string\",\"value\":\"hi\"}")
   let result = checkpoint.load(cp, "0:greet")
-  should.equal(result, Ok(option.Some("{\"type\":\"string\",\"value\":\"hi\"}")))
+  should.equal(
+    result,
+    Ok(option.Some("{\"type\":\"string\",\"value\":\"hi\"}")),
+  )
 }
 
 pub fn load_missing_returns_none_test() {

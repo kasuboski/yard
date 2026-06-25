@@ -1,47 +1,35 @@
 //// Hermes Agent — 5-Pillar Agentic Operating System on the BEAM
 ////
-//// CLI entry point. Uses the same session machinery as the Telegram
-//// gateway (HermesSession, chat_messages, workspace persistence) but
-//// runs a single prompt and exits.
+//// CLI entry point. Uses yard primitives directly:
+////   - ConversationStore (pg_conversation → conversations table)
+////   - pg_events consumer (→ yard_events table)
+////   - start_with_ui (→ HTTP dashboard)
 ////
 //// The agent uses chute_exec as its primary tool — the LLM writes Chute
 //// programs which are executed in Ballast's sandbox with Hermes effect
 //// handlers bridging to Pig's workspace (VFS + KV).
-////
-//// Architecture:
-////
-////   LLM (via OpenAI-compatible provider)
-////     │
-////     ├─ tool call: chute_exec(source, env)
-////     │     │
-////     │     └─ Yard runner → Ballast evaluator
-////     │           │
-////     │           ├─ emit_event  → cell actor (events echoed back to LLM)
-////     │           ├─ read_file   → Pig workspace VFS
-////     │           ├─ write_file  → Pig workspace VFS
-////     │           ├─ list_files  → Pig workspace VFS
-////     │           ├─ recall      → Pig workspace KV
-////     │           └─ store       → Pig workspace KV
-////     │
-////     └─ response: JSON with result + events + gas_used
 ////
 //// Running: `gleam run`
 //// Environment: OPENAI_COMPAT_BASE_URL, OPENAI_COMPAT_API_KEY,
 ////              OPENAI_COMPAT_MODEL (defaults to Ollama localhost)
 
 import envoy
-import gleam/erlang/process
-import gleam/io
-import gleam/result
 import gabsurd/client
+import gleam/erlang/process
+import gleam/int
+import gleam/io
+import gleam/option
+import gleam/result
 import pig/ai/openai
 import pig/workspace
 import simplifile
 import yard/db
 import yard/obs/dispatcher
+import yard/obs/pg_events
 import yard/obs/session as yard_session
 import yard/obs/terminal
 import yard/runner
+import yard/ui/server as ui_server
 
 import hermes_agent/chute_exec
 import hermes_agent/prompt
@@ -76,6 +64,17 @@ fn db_url() -> String {
   |> result.unwrap("postgresql://gabsurd:gabsurd@127.0.0.1:5432/gabsurd")
 }
 
+fn ui_port() -> Int {
+  case envoy.get("YARD_UI_PORT") {
+    Ok(port_str) ->
+      case int.parse(port_str) {
+        Ok(port) -> port
+        Error(_) -> 4001
+      }
+    Error(_) -> 4001
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════
 // Main
 // ═══════════════════════════════════════════════════════════════
@@ -96,26 +95,17 @@ pub fn main() {
   let workspace_path = dir <> "/hermes_workspace.db"
   let yard_session_path =
     dir <> "/hermes_obs_" <> yard_session.iso_timestamp() <> ".jsonl"
+  let ui = ui_port()
 
   io.println("LLM:       " <> openai_model() <> " @ " <> openai_base_url())
-  io.println("DB:        " <> dir)
+  io.println("DB:        " <> db_url())
   io.println("Workspace: " <> workspace_path)
   io.println("Obs:       " <> yard_session_path)
+  io.println("UI:        http://localhost:" <> int_to_string(ui))
   io.println("Task:      " <> task)
   io.println("")
 
-  // ── 2. Yard observability stack ──────────────────────────────
-  let assert Ok(yard_dispatcher) = dispatcher.start()
-
-  let assert Ok(yard_terminal) = terminal.start()
-  process.send(yard_dispatcher, dispatcher.RegisterConsumer(yard_terminal))
-
-  let assert Ok(yard_sess) = yard_session.start_consumer(yard_session_path)
-  process.send(yard_dispatcher, dispatcher.RegisterConsumer(yard_sess))
-
-  io.println("Yard observability started")
-
-  // ── 3. Database setup ───────────────────────────────────────
+  // ── 2. Database setup ───────────────────────────────────────
   let assert Ok(started) = client.start(db_url())
   let global_conn = started.data
   let assert Ok(Nil) = db.migrate(global_conn)
@@ -123,7 +113,29 @@ pub fn main() {
   let assert Ok(ws) = workspace.open(workspace_path)
   let workspace_conn = workspace.connection(ws)
 
-  // ── 4. Build session config with chute_exec tool ─────────────
+  // ── 3. Yard observability stack ──────────────────────────────
+  let assert Ok(yard_dispatcher) = dispatcher.start()
+
+  // Terminal consumer — prints events to stdout
+  let assert Ok(yard_terminal) = terminal.start()
+  process.send(yard_dispatcher, dispatcher.RegisterConsumer(yard_terminal))
+
+  // JSONL session consumer — writes events to a file
+  let assert Ok(yard_sess) = yard_session.start_consumer(yard_session_path)
+  process.send(yard_dispatcher, dispatcher.RegisterConsumer(yard_sess))
+
+  // PostgreSQL events consumer — writes events to yard_events table
+  let assert Ok(yard_pg) = pg_events.start_consumer(global_conn)
+  process.send(yard_dispatcher, dispatcher.RegisterConsumer(yard_pg))
+
+  io.println("Yard observability started (terminal + JSONL + yard_events)")
+
+  // ── 4. UI dashboard ──────────────────────────────────────────
+  let assert Ok(_) = ui_server.start(db: global_conn, port: ui)
+  io.println("Dashboard: http://localhost:" <> int_to_string(ui))
+  io.println("")
+
+  // ── 5. Build session config with chute_exec tool ─────────────
   let provider =
     openai.provider_with_base_url(
       openai_api_key(),
@@ -148,16 +160,16 @@ pub fn main() {
       run_timeout_ms: 300_000,
     )
 
-  // ── 5. Load session ────────────────────────────────────────
+  // ── 6. Load session ────────────────────────────────────────
   // CLI user_key is "cli:local" — shared across CLI runs.
-  // Conversation history persists in chat_messages.
+  // Conversation history persists in the conversations table.
   io.println("Starting session...")
   let assert Ok(sess) =
     session.load(sess_config, global_conn, workspace_conn, "cli:local")
-  io.println("Session: " <> sess.session_id)
+  io.println("Session: " <> sess.conversation_id)
   io.println("")
 
-  // ── 6. Run task ─────────────────────────────────────────────
+  // ── 7. Run task ─────────────────────────────────────────────
   case session.run_prompt(sess, task) {
     Ok(response) -> {
       io.println("Agent response:")
@@ -166,14 +178,20 @@ pub fn main() {
     Error(_) -> io.println("[error running agent]")
   }
 
-  // ── 7. Shutdown ─────────────────────────────────────────────
+  // ── 8. Shutdown ─────────────────────────────────────────────
   // Stop the session, give Yard a moment to flush pending events,
-  // then stop the dispatcher.
+  // then stop the dispatcher. The UI server runs until the VM exits.
   session.stop(sess)
   process.sleep(200)
   process.send(yard_dispatcher, dispatcher.Stop)
   io.println("")
   io.println("Observability: " <> yard_session_path)
-  io.println("Messages:      PostgreSQL")
+  io.println("Messages:      PostgreSQL conversations table")
+  io.println("Events:        PostgreSQL yard_events table")
+  io.println("Dashboard:     http://localhost:" <> int_to_string(ui))
   io.println("Done.")
+}
+
+fn int_to_string(i: Int) -> String {
+  int.to_string(i)
 }

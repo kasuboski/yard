@@ -8,20 +8,15 @@
 //// The cron extension is created by the absurd schema. This module
 //// provides the yard-specific scheduling layer on top.
 
+import gabsurd/client.{type Db, type GabsurdError}
 import gleam/dynamic/decode
 import gleam/json
 import gleam/string
-import gabsurd/client.{type Db, type GabsurdError}
 import parrot/dev
 
 /// A cron job entry from cron.job.
 pub type CronJob {
-  CronJob(
-    job_id: Int,
-    schedule: String,
-    command: String,
-    job_name: String,
-  )
+  CronJob(job_id: Int, schedule: String, command: String, job_name: String)
 }
 
 /// Error from pg_cron operations.
@@ -55,17 +50,16 @@ pub fn schedule(
   let command = build_spawn_command(queue_name, task_name, params_str)
 
   // Use cron.schedule with a job name for easy management.
-  let sql =
-    "SELECT cron.schedule($1, $2, $3)::text"
+  let sql = "SELECT cron.schedule($1, $2, $3)::text"
   case
-    client.exec(db, #(
-      sql,
-      [
+    client.exec(
+      db,
+      #(sql, [
         dev.ParamString(job_name),
         dev.ParamString(schedule),
         dev.ParamString(command),
-      ],
-    ))
+      ]),
+    )
   {
     Ok(Nil) -> Ok(Nil)
     Error(e) -> Error(CronError(error_to_string(e)))
@@ -77,8 +71,7 @@ pub fn unschedule(
   db db: Db,
   job_name job_name: String,
 ) -> Result(Nil, CronError) {
-  let sql =
-    "SELECT cron.unschedule($1)::text"
+  let sql = "SELECT cron.unschedule($1)::text"
   case client.exec(db, #(sql, [dev.ParamString(job_name)])) {
     Ok(Nil) -> Ok(Nil)
     Error(e) -> Error(CronError(error_to_string(e)))
@@ -111,12 +104,7 @@ fn cron_job_decoder() -> decode.Decoder(CronJob) {
   use schedule <- decode.field(1, decode.string)
   use command <- decode.field(2, decode.string)
   use job_name <- decode.field(3, decode.string)
-  decode.success(CronJob(
-    job_id:,
-    schedule:,
-    command:,
-    job_name:,
-  ))
+  decode.success(CronJob(job_id:, schedule:, command:, job_name:))
 }
 
 fn build_spawn_command(

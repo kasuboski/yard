@@ -3,16 +3,20 @@
 //// This is the core bridge between Pig (agent) and Yard (runner).
 //// The LLM generates Chute programs as tool calls; this module
 //// executes them in Ballast's sandboxed evaluator.
+////
+//// Supports effect-level durability via an optional DurableStore.
+//// When a checkpointer-backed store is provided (durability.from_checkpointer),
+//// each effect result is checkpointed so a crashed run can be replayed.
 
 import ballast/value.{type Value}
 import birl
+import gabsurd/client.{type Db}
 import gleam/dynamic
 import gleam/dynamic/decode
 import gleam/int
 import gleam/json
 import gleam/list
 import gleam/option
-import gabsurd/client.{type Db}
 import gleam/result
 import gleam/string
 import gluid
@@ -21,7 +25,7 @@ import pig/ai/tool_definition.{ToolDefinition}
 import pig/tool.{type Tool, type ToolError, Tool, ToolError}
 import sqlight
 import yard/db
-import yard/durability
+import yard/durability.{type DurableStore}
 import yard/loader
 import yard/obs/events.{type HostEvent}
 import yard/runner.{RunConfig}
@@ -43,6 +47,10 @@ pub type ChuteExecConfig {
     global_conn: option.Option(Db),
     /// Optional agent ID for run tracking.
     agent_id: option.Option(String),
+    /// Durable store for effect-level checkpointing.
+    /// Defaults to durability.none() (non-durable).
+    /// Pass durability.from_checkpointer(cp) for durable runs.
+    store: DurableStore,
   )
 }
 
@@ -51,7 +59,13 @@ pub fn config(
   conn: sqlight.Connection,
   emit: fn(HostEvent) -> Nil,
 ) -> ChuteExecConfig {
-  ChuteExecConfig(conn:, emit:, global_conn: option.None, agent_id: option.None)
+  ChuteExecConfig(
+    conn:,
+    emit:,
+    global_conn: option.None,
+    agent_id: option.None,
+    store: durability.none(),
+  )
 }
 
 /// Create a config with no Yard observability (silent).
@@ -61,6 +75,7 @@ pub fn silent_config(conn: sqlight.Connection) -> ChuteExecConfig {
     emit: fn(_) { Nil },
     global_conn: option.None,
     agent_id: option.None,
+    store: durability.none(),
   )
 }
 
@@ -77,12 +92,22 @@ pub fn with_run_tracking(
   )
 }
 
+/// Enable effect-level durability with a DurableStore.
+/// When gabsurd task infrastructure is available, pass a checkpointer-backed
+/// store via durability.from_checkpointer(cp).
+pub fn with_durable_store(
+  cfg: ChuteExecConfig,
+  store: DurableStore,
+) -> ChuteExecConfig {
+  ChuteExecConfig(..cfg, store:)
+}
+
 /// Run a Chute program and return the result as JSON.
 ///
 /// This is the core function — it:
 /// 1. Parses the Chute source
 /// 2. Loads it as a Yard actor
-/// 3. Builds RunConfig with Hermes effect handlers
+/// 3. Builds RunConfig with Hermes effect handlers and durable store
 /// 4. Runs it in Ballast
 /// 5. Captures emit_event payloads and gas_used
 /// 6. Returns structured JSON response
@@ -163,7 +188,7 @@ pub fn run(
           trigger_type: "tool_call",
           trigger_source: "chute_exec",
           depth: 0,
-          store: durability.none(),
+          store: cfg.store,
         )
 
       case runner.run(run_config) {

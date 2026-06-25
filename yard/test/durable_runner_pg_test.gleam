@@ -19,6 +19,7 @@ import gleam/json
 import gleam/list
 import gleam/option
 import gleeunit
+import testing
 import yard/checkpoint
 import yard/durability
 import yard/gabsurd_checkpointer
@@ -26,8 +27,6 @@ import yard/loader
 import yard/obs/events.{type HostEvent, EffectHandled, EffectReplayed}
 import yard/runner.{type EffectHandler, type RunConfig, RunConfig}
 import yard/value_codec
-import testing
-
 
 pub fn main() {
   gleeunit.main()

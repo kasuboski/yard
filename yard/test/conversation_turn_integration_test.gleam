@@ -5,16 +5,16 @@
 ////
 //// Requires: docker container running (bin/postgres.sh)
 
+import gabsurd/client
+import gabsurd/queue
+import gabsurd/task
 import gleam/int
 import gleam/json
 import gleam/option
 import gleam/string
-import gluid
 import gleeunit
 import gleeunit/should
-import gabsurd/client
-import gabsurd/queue
-import gabsurd/task
+import gluid
 import pig/ai/message.{Assistant, User}
 import pig/ai/stop_reason.{Stop}
 import testing
@@ -25,7 +25,6 @@ import yard/durable_turn
 import yard/gabsurd_checkpointer
 import yard/pg_conversation
 
-
 pub fn main() {
   gleeunit.main()
 }
@@ -34,9 +33,7 @@ fn unique_id() -> String {
   gluid.guidv4() |> string.lowercase()
 }
 
-fn with_db_queue(
-  test_fn: fn(client.Db, String, task.Claim) -> a,
-) -> a {
+fn with_db_queue(test_fn: fn(client.Db, String, task.Claim) -> a) -> a {
   testing.with_pg_db(fn(db) {
     let queue_name = "conv_turn_" <> int.to_string(client.unique_integer())
     let assert Ok(Nil) = queue.create(db, queue_name)
@@ -56,24 +53,26 @@ pub fn first_turn_no_history_test() {
   with_db_queue(fn(db, queue_name, claim) {
     let conv_id = unique_id()
     let conv_store = pg_conversation.from_db(db:)
-    let cp = gabsurd_checkpointer.from_parts(
-      db,
-      queue_name,
-      claim.task_id,
-      claim.run_id,
-      claim_timeout: 300,
-    )
+    let cp =
+      gabsurd_checkpointer.from_parts(
+        db,
+        queue_name,
+        claim.task_id,
+        claim.run_id,
+        claim_timeout: 300,
+      )
 
     let assert Ok(durable_turn.AssembledHistory(
       messages:,
       entry_point:,
       is_retry:,
-    )) = durable_turn.assemble_history(
-      conv_store: conv_store,
-      cp_store: cp,
-      conversation_id: conv_id,
-      user_message: "hello",
-    )
+    )) =
+      durable_turn.assemble_history(
+        conv_store: conv_store,
+        cp_store: cp,
+        conversation_id: conv_id,
+        user_message: "hello",
+      )
 
     should.equal(messages, [User("hello")])
     should.equal(entry_point, agent_checkpoint.CallLlm)
@@ -98,13 +97,14 @@ pub fn second_turn_loads_previous_history_test() {
       ])
     let _ = conversation.save(conv_store, conv_id, turn1_json)
 
-    let cp = gabsurd_checkpointer.from_parts(
-      db,
-      queue_name,
-      claim.task_id,
-      claim.run_id,
-      claim_timeout: 300,
-    )
+    let cp =
+      gabsurd_checkpointer.from_parts(
+        db,
+        queue_name,
+        claim.task_id,
+        claim.run_id,
+        claim_timeout: 300,
+      )
 
     let assert Ok(durable_turn.AssembledHistory(messages:, ..)) =
       durable_turn.assemble_history(
@@ -138,29 +138,32 @@ pub fn crash_retry_checkpoints_ahead_of_table_test() {
     let _ = conversation.save(conv_store, conv_id, turn1_json)
 
     // Turn 2 crashed mid-execution — checkpoints have progress
-    let cp = gabsurd_checkpointer.from_parts(
-      db,
-      queue_name,
-      claim.task_id,
-      claim.run_id,
-      claim_timeout: 300,
-    )
-    let _ = agent_checkpoint.save_messages(cp, [
-      User("turn2-msg"),
-      Assistant("turn2-reply", [], option.None, option.Some(Stop)),
-    ])
+    let cp =
+      gabsurd_checkpointer.from_parts(
+        db,
+        queue_name,
+        claim.task_id,
+        claim.run_id,
+        claim_timeout: 300,
+      )
+    let _ =
+      agent_checkpoint.save_messages(cp, [
+        User("turn2-msg"),
+        Assistant("turn2-reply", [], option.None, option.Some(Stop)),
+      ])
 
     // Retry Turn 2
     let assert Ok(durable_turn.AssembledHistory(
       messages:,
       entry_point:,
       is_retry:,
-    )) = durable_turn.assemble_history(
-      conv_store: conv_store,
-      cp_store: cp,
-      conversation_id: conv_id,
-      user_message: "turn2-msg",
-    )
+    )) =
+      durable_turn.assemble_history(
+        conv_store: conv_store,
+        cp_store: cp,
+        conversation_id: conv_id,
+        user_message: "turn2-msg",
+      )
 
     should.equal(is_retry, True)
     should.equal(entry_point, agent_checkpoint.Done)

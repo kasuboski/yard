@@ -6,19 +6,19 @@
 //// The collector tracks gas_used by observing ActorCompleted events.
 
 import ballast/value.{ErrorVal, ListVal, NilVal, OkVal, RecordVal, StringVal}
+import gabsurd/client.{type Db}
 import gleam/dict
 import gleam/erlang/process
+import gleam/json
 import gleam/list
 import gleam/otp/actor
 import gleam/string
-import gleam/json
-import gabsurd/client.{type Db}
 import pig/workspace/kv
 import pig/workspace/vfs
 import sqlight
 import yard/db
-import yard/pg_cron
 import yard/obs/events.{type HostEvent}
+import yard/pg_cron
 import yard/runner.{type EffectHandler}
 import yard/skill_repo
 
@@ -230,9 +230,7 @@ pub fn recall_handler(conn: sqlight.Connection) -> EffectHandler {
 // ═══════════════════════════════════════════════════════════════
 
 /// Handler for register_skill effect: registers a skill in the global DB.
-pub fn register_skill_handler(
-  global_conn: Db,
-) -> EffectHandler {
+pub fn register_skill_handler(global_conn: Db) -> EffectHandler {
   fn(_name, args) {
     case args {
       [StringVal(name), StringVal(description), StringVal(source)] ->
@@ -396,9 +394,7 @@ pub fn list_agents_handler(global_conn: Db) -> EffectHandler {
 }
 
 /// Handler for register_agent effect: registers a new agent.
-pub fn register_agent_handler(
-  global_conn: Db,
-) -> EffectHandler {
+pub fn register_agent_handler(global_conn: Db) -> EffectHandler {
   fn(_name, args) {
     case args {
       [StringVal(name), StringVal(description), StringVal(source)] ->
@@ -530,7 +526,8 @@ pub fn cancel_cron_handler(pg_db: Db) -> EffectHandler {
     case args {
       [StringVal(job_name)] ->
         case string.starts_with(job_name, "hermes_") {
-          False -> Ok(ErrorVal(StringVal("cancel_cron: can only cancel hermes_ jobs")))
+          False ->
+            Ok(ErrorVal(StringVal("cancel_cron: can only cancel hermes_ jobs")))
           True ->
             case pg_cron.unschedule(pg_db, job_name:) {
               Ok(_) -> Ok(OkVal(NilVal))
@@ -538,7 +535,8 @@ pub fn cancel_cron_handler(pg_db: Db) -> EffectHandler {
                 Ok(ErrorVal(StringVal("cancel_cron: " <> msg)))
             }
         }
-      _ -> Ok(ErrorVal(StringVal("cancel_cron: expected 1 string arg (job_name)")))
+      _ ->
+        Ok(ErrorVal(StringVal("cancel_cron: expected 1 string arg (job_name)")))
     }
   }
 }

@@ -4,18 +4,18 @@
 //// pg_cron.schedule() creates entries in cron.job that fire gabsurd spawn_task
 //// directly, surviving BEAM restarts.
 
+import gabsurd/client
+import gabsurd/queue
 import gleam/erlang/process
 import gleam/int
 import gleam/json
 import gleam/string
-import gluid
 import gleeunit
 import gleeunit/should
-import gabsurd/client
-import gabsurd/queue
+import gluid
 import yard/pg_cron
-const db_url = "postgresql://gabsurd:gabsurd@127.0.0.1:5432/gabsurd"
 
+const db_url = "postgresql://gabsurd:gabsurd@127.0.0.1:5432/gabsurd"
 
 pub fn main() {
   gleeunit.main()
@@ -58,14 +58,15 @@ fn unique_job_name() -> String {
 pub fn schedule_creates_cron_job_test() {
   with_db(fn(db, queue_name) {
     let job_name = unique_job_name()
-    let result = pg_cron.schedule(
-      db,
-      job_name:,
-      schedule: "* * * * *",
-      queue_name:,
-      task_name: "test-cron-task",
-      params: json.object([#("msg", json.string("hello"))]),
-    )
+    let result =
+      pg_cron.schedule(
+        db,
+        job_name:,
+        schedule: "* * * * *",
+        queue_name:,
+        task_name: "test-cron-task",
+        params: json.object([#("msg", json.string("hello"))]),
+      )
 
     should.be_ok(result)
 
@@ -80,14 +81,15 @@ pub fn schedule_creates_cron_job_test() {
 pub fn unschedule_removes_cron_job_test() {
   with_db(fn(db, queue_name) {
     let job_name = unique_job_name()
-    let _ = pg_cron.schedule(
-      db,
-      job_name:,
-      schedule: "*/5 * * * *",
-      queue_name:,
-      task_name: "test-cron-task",
-      params: json.object([]),
-    )
+    let _ =
+      pg_cron.schedule(
+        db,
+        job_name:,
+        schedule: "*/5 * * * *",
+        queue_name:,
+        task_name: "test-cron-task",
+        params: json.object([]),
+      )
 
     let result = pg_cron.unschedule(db, job_name:)
     should.be_ok(result)
@@ -105,27 +107,28 @@ pub fn list_jobs_returns_schedules_test() {
     let job1 = unique_job_name()
     let job2 = unique_job_name()
 
-    let _ = pg_cron.schedule(
-      db,
-      job_name: job1,
-      schedule: "0 9 * * *",
-      queue_name:,
-      task_name: "morning-task",
-      params: json.object([]),
-    )
-    let _ = pg_cron.schedule(
-      db,
-      job_name: job2,
-      schedule: "0 17 * * *",
-      queue_name:,
-      task_name: "evening-task",
-      params: json.object([]),
-    )
+    let _ =
+      pg_cron.schedule(
+        db,
+        job_name: job1,
+        schedule: "0 9 * * *",
+        queue_name:,
+        task_name: "morning-task",
+        params: json.object([]),
+      )
+    let _ =
+      pg_cron.schedule(
+        db,
+        job_name: job2,
+        schedule: "0 17 * * *",
+        queue_name:,
+        task_name: "evening-task",
+        params: json.object([]),
+      )
 
     let assert Ok(jobs) = pg_cron.list_jobs(db)
-    let our_jobs = list.filter(jobs, fn(j) {
-      j.job_name == job1 || j.job_name == job2
-    })
+    let our_jobs =
+      list.filter(jobs, fn(j) { j.job_name == job1 || j.job_name == job2 })
     should.equal(list.length(our_jobs), 2)
   })
 }

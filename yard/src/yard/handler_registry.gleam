@@ -14,10 +14,10 @@
 //// This is the generalized version of what issue_triage does by hand:
 //// building a handler dict per invocation from domain-specific handlers.
 
+import gabsurd/client.{type Db}
 import gleam/dict
 import gleam/list
 import gleam/option
-import gabsurd/client.{type Db}
 import logging
 import sqlight
 import yard/db

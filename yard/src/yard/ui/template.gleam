@@ -8,7 +8,10 @@ import gleam/string
 import yard/ui/queries.{type ConversationRow, type EventRow, type RunSummary}
 
 /// Generate the main dashboard page.
-pub fn dashboard(runs: List(RunSummary), conversations: List(ConversationRow)) -> String {
+pub fn dashboard(
+  runs: List(RunSummary),
+  conversations: List(ConversationRow),
+) -> String {
   page("Yard Dashboard", dashboard_body(runs, conversations))
 }
 
@@ -21,7 +24,10 @@ pub fn run_detail(run_id: String, events: List(EventRow)) -> String {
 /// Generate the conversation detail page.
 pub fn conversation_detail(id: String, messages_json: String) -> String {
   let safe_id = escape(id)
-  page("Conversation " <> truncate(safe_id, 12), conversation_body(id, messages_json))
+  page(
+    "Conversation " <> truncate(safe_id, 12),
+    conversation_body(id, messages_json),
+  )
 }
 
 // ── Page wrapper ─────────────────────────────────────────────────────
@@ -32,12 +38,8 @@ fn page(title: String, body: String) -> String {
 <head>
 <meta charset=\"UTF-8\">
 <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">
-<title>"
-  <> escape(title)
-  <> "</title>
-<style>"
-  <> css()
-  <> "</style>
+<title>" <> escape(title) <> "</title>
+<style>" <> css() <> "</style>
 </head>
 <body>
 <nav class=\"topnav\">
@@ -46,31 +48,27 @@ fn page(title: String, body: String) -> String {
   <a href=\"/runs\">Runs</a>
   <a href=\"/conversations\">Conversations</a>
 </nav>
-<main>"
-  <> body
-  <> "</main>
+<main>" <> body <> "</main>
 </body>
 </html>"
 }
 
 // ── Dashboard body ───────────────────────────────────────────────────
 
-fn dashboard_body(runs: List(RunSummary), conversations: List(ConversationRow)) -> String {
+fn dashboard_body(
+  runs: List(RunSummary),
+  conversations: List(ConversationRow),
+) -> String {
   let run_count = list.length(runs)
   let conv_count = list.length(conversations)
   "<h1>Dashboard</h1>
 <div class=\"stats\">
-  <div class=\"stat\"><span class=\"v\">"
-  <> int.to_string(run_count)
-  <> "</span><span class=\"l\">Recent Runs</span></div>
-  <div class=\"stat\"><span class=\"v\">"
-  <> int.to_string(conv_count)
-  <> "</span><span class=\"l\">Conversations</span></div>
+  <div class=\"stat\"><span class=\"v\">" <> int.to_string(run_count) <> "</span><span class=\"l\">Recent Runs</span></div>
+  <div class=\"stat\"><span class=\"v\">" <> int.to_string(conv_count) <> "</span><span class=\"l\">Conversations</span></div>
 </div>
-<h2>Recent Runs</h2>"
-  <> runs_table(runs)
-  <> "<h2>Conversations</h2>"
-  <> conversations_table(conversations)
+<h2>Recent Runs</h2>" <> runs_table(runs) <> "<h2>Conversations</h2>" <> conversations_table(
+    conversations,
+  )
 }
 
 // ── Run detail body ──────────────────────────────────────────────────
@@ -78,10 +76,9 @@ fn dashboard_body(runs: List(RunSummary), conversations: List(ConversationRow)) 
 fn run_detail_body(run_id: String, events: List(EventRow)) -> String {
   let safe_id = escape(run_id)
   "<h1>Run Detail</h1>
-<p class=\"muted\">Run ID: <code>"
-  <> safe_id
-  <> "</code></p>"
-  <> events_table(events)
+<p class=\"muted\">Run ID: <code>" <> safe_id <> "</code></p>" <> events_table(
+    events,
+  )
 }
 
 // ── Conversation body ────────────────────────────────────────────────
@@ -89,12 +86,8 @@ fn run_detail_body(run_id: String, events: List(EventRow)) -> String {
 fn conversation_body(id: String, messages_json: String) -> String {
   let safe_id = escape(id)
   "<h1>Conversation</h1>
-<p class=\"muted\">ID: <code>"
-  <> safe_id
-  <> "</code></p>
-<div class=\"messages\">"
-  <> render_messages(messages_json)
-  <> "</div>"
+<p class=\"muted\">ID: <code>" <> safe_id <> "</code></p>
+<div class=\"messages\">" <> render_messages(messages_json) <> "</div>"
 }
 
 // ── Tables ───────────────────────────────────────────────────────────
@@ -104,19 +97,34 @@ fn runs_table(runs: List(RunSummary)) -> String {
     [] -> "<p class=\"empty\">No runs yet.</p>"
     _ -> "
 <table>
-  <thead><tr><th>Run ID</th><th>Task</th><th>Status</th><th>Attempt</th><th>Created</th></tr></thead>
+  <thead><tr><th>Run ID</th><th>Agent</th><th>Source</th><th>Status</th><th>Started</th></tr></thead>
   <tbody>
-"
-    <> string.join(list.map(runs, fn(r) {
-      "<tr>"
-      <> "<td><a href=\"/runs/" <> escape(r.run_id) <> "\"><code>" <> truncate(escape(r.run_id), 12) <> "</code></a></td>"
-      <> "<td>" <> escape(r.task_name) <> "</td>"
-      <> "<td><span class=\"badge badge-" <> status_class(r.status) <> "\">" <> escape(r.status) <> "</span></td>"
-      <> "<td>" <> int.to_string(r.attempt) <> "</td>"
-      <> "<td class=\"muted\">" <> escape(r.created_at) <> "</td>"
-      <> "</tr>"
-    }), "\n")
-    <> "
+" <> string.join(
+        list.map(runs, fn(r) {
+          "<tr>"
+          <> "<td><a href=\"/runs/"
+          <> escape(r.run_id)
+          <> "\"><code>"
+          <> truncate(escape(r.run_id), 12)
+          <> "</code></a></td>"
+          <> "<td>"
+          <> escape(r.agent_id)
+          <> "</td>"
+          <> "<td>"
+          <> escape(r.trigger_source)
+          <> "</td>"
+          <> "<td><span class=\"badge badge-"
+          <> status_class(r.status)
+          <> "\">"
+          <> escape(r.status)
+          <> "</span></td>"
+          <> "<td class=\"muted\">"
+          <> escape(r.started_at)
+          <> "</td>"
+          <> "</tr>"
+        }),
+        "\n",
+      ) <> "
   </tbody>
 </table>"
   }
@@ -129,20 +137,31 @@ fn events_table(events: List(EventRow)) -> String {
 <table>
   <thead><tr><th>Type</th><th>Duration</th><th>Time</th><th>Payload</th></tr></thead>
   <tbody>
-"
-    <> string.join(list.map(events, fn(e) {
-      let dur = case e.duration_ms {
-        option.Some(ms) -> int.to_string(ms) <> "ms"
-        option.None -> "—"
-      }
-      "<tr>"
-      <> "<td><span class=\"badge badge-event-" <> event_class(e.event_type) <> "\">" <> escape(e.event_type) <> "</span></td>"
-      <> "<td>" <> dur <> "</td>"
-      <> "<td class=\"muted\">" <> escape(e.created_at) <> "</td>"
-      <> "<td><code class=\"payload\">" <> escape(truncate(e.payload, 200)) <> "</code></td>"
-      <> "</tr>"
-    }), "\n")
-    <> "
+" <> string.join(
+        list.map(events, fn(e) {
+          let dur = case e.duration_ms {
+            option.Some(ms) -> int.to_string(ms) <> "ms"
+            option.None -> "—"
+          }
+          "<tr>"
+          <> "<td><span class=\"badge badge-event-"
+          <> event_class(e.event_type)
+          <> "\">"
+          <> escape(e.event_type)
+          <> "</span></td>"
+          <> "<td>"
+          <> dur
+          <> "</td>"
+          <> "<td class=\"muted\">"
+          <> escape(e.created_at)
+          <> "</td>"
+          <> "<td><code class=\"payload\">"
+          <> escape(truncate(e.payload, 200))
+          <> "</code></td>"
+          <> "</tr>"
+        }),
+        "\n",
+      ) <> "
   </tbody>
 </table>"
   }
@@ -155,16 +174,27 @@ fn conversations_table(conversations: List(ConversationRow)) -> String {
 <table>
   <thead><tr><th>ID</th><th>Agent</th><th>User Key</th><th>Updated</th></tr></thead>
   <tbody>
-"
-    <> string.join(list.map(conversations, fn(c) {
-      "<tr>"
-      <> "<td><a href=\"/conversations/" <> escape(c.id) <> "\"><code>" <> truncate(escape(c.id), 12) <> "</code></a></td>"
-      <> "<td>" <> escape(c.agent_id) <> "</td>"
-      <> "<td>" <> escape(c.user_key) <> "</td>"
-      <> "<td class=\"muted\">" <> escape(c.updated_at) <> "</td>"
-      <> "</tr>"
-    }), "\n")
-    <> "
+" <> string.join(
+        list.map(conversations, fn(c) {
+          "<tr>"
+          <> "<td><a href=\"/conversations/"
+          <> escape(c.id)
+          <> "\"><code>"
+          <> truncate(escape(c.id), 12)
+          <> "</code></a></td>"
+          <> "<td>"
+          <> escape(c.agent_id)
+          <> "</td>"
+          <> "<td>"
+          <> escape(c.user_key)
+          <> "</td>"
+          <> "<td class=\"muted\">"
+          <> escape(c.updated_at)
+          <> "</td>"
+          <> "</tr>"
+        }),
+        "\n",
+      ) <> "
   </tbody>
 </table>"
   }
@@ -175,9 +205,7 @@ fn conversations_table(conversations: List(ConversationRow)) -> String {
 fn render_messages(messages_json: String) -> String {
   // Simple rendering — just show the raw JSON in a pre block.
   // A more polished version would parse and render each message.
-  "<pre class=\"json\">"
-  <> escape(messages_json)
-  <> "</pre>"
+  "<pre class=\"json\">" <> escape(messages_json) <> "</pre>"
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────

@@ -117,7 +117,9 @@ pub fn tool_call_messages_round_trip_test() {
     message.User("check the weather"),
     message.Assistant(
       "",
-      [message.ToolCall("call_1", "get_weather", "{\"city\":\"SF\"}"),],
+      [
+        message.ToolCall("call_1", "get_weather", "{\"city\":\"SF\"}"),
+      ],
       option.None,
       option.Some(stop_reason.ToolUse),
     ),
@@ -140,7 +142,12 @@ pub fn entry_point_from_loaded_messages_test() {
   let cp = checkpoint.in_memory()
   let msgs = [
     message.User("hello"),
-    message.Assistant("hi there", [], option.None, option.Some(stop_reason.Stop)),
+    message.Assistant(
+      "hi there",
+      [],
+      option.None,
+      option.Some(stop_reason.Stop),
+    ),
   ]
   let assert Ok(Nil) = agent_checkpoint.save_messages(cp, msgs)
   let assert Ok(loaded) = agent_checkpoint.load_messages(cp)

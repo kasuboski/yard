@@ -1,21 +1,22 @@
 //// Observability UI — dashboard HTML generator.
 ////
 //// Served by yard/ui/server.gleam when yard starts.
-//// Queries yard_events, conversations, and absurd task tables.
+//// Queries yard_events, conversations, and runs tables.
 
 import gabsurd/client.{type Db}
-import parrot/dev
 import gleam/dynamic/decode
+import gleam/option.{type Option}
+import parrot/dev
 
 // ── Query types ──────────────────────────────────────────────────────
 
 pub type RunSummary {
   RunSummary(
     run_id: String,
-    task_name: String,
+    agent_id: String,
     status: String,
-    attempt: Int,
-    created_at: String,
+    trigger_source: String,
+    started_at: String,
   )
 }
 
@@ -23,7 +24,7 @@ pub type EventRow {
   EventRow(
     event_type: String,
     payload: String,
-    duration_ms: option.Option(Int),
+    duration_ms: Option(Int),
     created_at: String,
   )
 }
@@ -39,19 +40,12 @@ pub type ConversationRow {
 
 // ── Queries ──────────────────────────────────────────────────────────
 
-/// List recent runs from the absurd tables.
-pub fn list_runs(db db: Db, queue_name queue_name: String) -> List(RunSummary) {
-  // Query runs from the queue's run table
-  let run_table = "absurd.r_" <> queue_name
-  let task_table = "absurd.t_" <> queue_name
+/// List recent runs from the runs table.
+pub fn list_runs(db db: Db) -> List(RunSummary) {
   let sql =
-    "SELECT r.run_id::text, t.task_name, r.status, r.attempt, r.created_at::text
-     FROM "
-    <> run_table
-    <> " r JOIN "
-    <> task_table
-    <> " t ON r.task_id = t.task_id
-     ORDER BY r.created_at DESC LIMIT 50"
+    "SELECT id::text, agent_id, status, trigger_source, started_at::text
+     FROM runs
+     ORDER BY started_at DESC LIMIT 50"
   case client.query_many(db, #(sql, [], run_summary_decoder())) {
     Ok(rows) -> rows
     Error(_) -> []
@@ -79,9 +73,7 @@ pub fn list_conversations(db db: Db) -> List(ConversationRow) {
     "SELECT id::text, agent_id, user_key, updated_at::text
      FROM conversations
      ORDER BY updated_at DESC LIMIT 50"
-  case
-    client.query_many(db, #(sql, [], conversation_row_decoder()))
-  {
+  case client.query_many(db, #(sql, [], conversation_row_decoder())) {
     Ok(rows) -> rows
     Error(_) -> []
   }
@@ -105,16 +97,16 @@ pub fn get_conversation(db db: Db, id id: String) -> String {
 
 fn run_summary_decoder() -> decode.Decoder(RunSummary) {
   use run_id <- decode.field(0, decode.string)
-  use task_name <- decode.field(1, decode.string)
+  use agent_id <- decode.field(1, decode.string)
   use status <- decode.field(2, decode.string)
-  use attempt <- decode.field(3, decode.int)
-  use created_at <- decode.field(4, decode.string)
+  use trigger_source <- decode.field(3, decode.string)
+  use started_at <- decode.field(4, decode.string)
   decode.success(RunSummary(
     run_id:,
-    task_name:,
+    agent_id:,
     status:,
-    attempt:,
-    created_at:,
+    trigger_source:,
+    started_at:,
   ))
 }
 
@@ -123,12 +115,7 @@ fn event_row_decoder() -> decode.Decoder(EventRow) {
   use payload <- decode.field(1, decode.string)
   use duration_ms <- decode.field(2, decode.optional(decode.int))
   use created_at <- decode.field(3, decode.string)
-  decode.success(EventRow(
-    event_type:,
-    payload:,
-    duration_ms:,
-    created_at:,
-  ))
+  decode.success(EventRow(event_type:, payload:, duration_ms:, created_at:))
 }
 
 fn conversation_row_decoder() -> decode.Decoder(ConversationRow) {
@@ -136,12 +123,5 @@ fn conversation_row_decoder() -> decode.Decoder(ConversationRow) {
   use agent_id <- decode.field(1, decode.string)
   use user_key <- decode.field(2, decode.string)
   use updated_at <- decode.field(3, decode.string)
-  decode.success(ConversationRow(
-    id:,
-    agent_id:,
-    user_key:,
-    updated_at:,
-  ))
+  decode.success(ConversationRow(id:, agent_id:, user_key:, updated_at:))
 }
-
-import gleam/option

@@ -1,20 +1,20 @@
 //// Session lifecycle — platform-agnostic session management.
 ////
-//// HermesSession holds a Pig agent, workspace connection, session ID,
-//// and user key. This module provides create/reset/load operations
-//// that are reusable across platforms (Telegram, Discord, web UI).
+//// Uses yard's ConversationStore for persistence (PostgreSQL conversations
+//// table) instead of the legacy chat_sessions/chat_messages tables.
+//// This is the convergence point: Hermes uses yard primitives directly.
 ////
 //// The session lifecycle:
-////   create()  — new Pig agent + workspace, fresh session in DB
-////   run_prompt() — pig.run() + save messages to DB
-////   reset()   — stop agent, complete session, create fresh agent + session
-////   load()    — find active session, recreate agent with history from DB
-////   stop()    — stop the Pig agent
+////   create()  — new pig agent + workspace, new conversation in DB
+////   run_prompt() — pig.run() + save conversation to ConversationStore
+////   reset()   — stop agent, create new conversation, workspace persists
+////   load()    — find conversation, recreate agent with history from store
+////   stop()    — stop the pig agent
 
+import gabsurd/client.{type Db}
 import gleam/io
 import gleam/list
 import gleam/option
-import gabsurd/client.{type Db}
 import gleam/otp/actor.{type StartError}
 import gleam/result
 import pig
@@ -22,17 +22,15 @@ import pig/ai/message.{type Message}
 import pig/ai/provider.{type Provider}
 import pig/tool
 import sqlight
-import yard/db
+import yard/agent_checkpoint
+import yard/conversation.{type ConversationStore}
+import yard/pg_conversation
 
 // ═══════════════════════════════════════════════════════════════
 // Types
 // ═══════════════════════════════════════════════════════════════
 
 /// Configuration for creating sessions.
-///
-/// Carries the provider, system prompt, tools, and agent name
-/// so that session.create/load/reset can build a properly configured
-/// Pig agent without hardcoding these details.
 pub type SessionConfig {
   SessionConfig(
     provider: Provider,
@@ -44,14 +42,14 @@ pub type SessionConfig {
   )
 }
 
-/// A user session holding a live Pig agent, workspace connection, session ID,
-/// and user key (for session lookup in the global DB).
+/// A user session holding a live Pig agent, workspace connection,
+/// conversation store, conversation ID, and user key.
 pub type HermesSession {
   HermesSession(
     agent: pig.Agent,
     workspace_conn: sqlight.Connection,
-    global_conn: Db,
-    session_id: String,
+    conv_store: ConversationStore,
+    conversation_id: String,
     user_key: String,
     run_timeout_ms: Int,
   )
@@ -62,7 +60,6 @@ pub type HermesSession {
 // ═══════════════════════════════════════════════════════════════
 
 /// Create a SessionConfig with just a provider and system prompt.
-/// No tools, agent_name="hermes", history_limit=20.
 pub fn simple_config(
   provider: Provider,
   system_prompt: String,
@@ -81,19 +78,20 @@ pub fn simple_config(
 // Create
 // ═══════════════════════════════════════════════════════════════
 
-/// Create a new session with a fresh Pig agent.
-///
-/// Creates a new chat session in the global DB for the user_key,
-/// starts a Pig agent configured from SessionConfig, and returns the session.
+/// Create a new session with a fresh Pig agent and new conversation.
 pub fn create(
   config: SessionConfig,
-  global_conn: Db,
+  db: Db,
   workspace_conn: sqlight.Connection,
   user_key: String,
 ) -> Result(HermesSession, Nil) {
-  // Create session in DB
-  use session_id <- result.try(
-    db.get_or_create_session_for_user(global_conn, user_key)
+  // Create conversation in DB
+  use conversation_id <- result.try(
+    pg_conversation.get_or_create_for_user(
+      db:,
+      agent_id: config.agent_name,
+      user_key:,
+    )
     |> result.replace_error(Nil),
   )
 
@@ -103,19 +101,23 @@ pub fn create(
     |> result.replace_error(Nil),
   )
 
+  let conv_store = pg_conversation.from_db(db:)
+
   Ok(HermesSession(
     agent:,
     workspace_conn:,
-    global_conn:,
-    session_id:,
+    conv_store:,
+    conversation_id:,
     user_key:,
     run_timeout_ms: config.run_timeout_ms,
   ))
 }
 
 // ═══════════════════════════════════════════════════════════════
+// Run Prompt
+// ═══════════════════════════════════════════════════════════════
 
-/// Run a prompt through the Pig agent and save messages to DB.
+/// Run a prompt through the Pig agent and save the conversation.
 ///
 /// Returns the assistant's response text.
 pub fn run_prompt(
@@ -125,41 +127,40 @@ pub fn run_prompt(
   case pig.try_run_with_timeout(session.agent, prompt, session.run_timeout_ms) {
     Ok(Ok(response)) -> {
       let content = message_content(response)
-      // Save both messages to global DB. Log but don't fail on error —
-      // the LLM response is still valid even if persistence fails.
-      case
-        db.save_chat_message(
-          session.global_conn,
-          session.session_id,
-          "user",
-          prompt,
-        )
-      {
-        Ok(_) -> Nil
-        Error(_) ->
-          io.println(
-            "[warn] Failed to save user message to session "
-            <> session.session_id,
-          )
-      }
-      case
-        db.save_chat_message(
-          session.global_conn,
-          session.session_id,
-          "assistant",
-          content,
-        )
-      {
-        Ok(_) -> Nil
-        Error(_) ->
-          io.println(
-            "[warn] Failed to save assistant message to session "
-            <> session.session_id,
-          )
-      }
+      // Persist: load existing conversation, append user + assistant,
+      // save back to the store.
+      persist_turn(session, prompt, response)
       Ok(content)
     }
     _ -> Error(Nil)
+  }
+}
+
+/// Save the current turn (user prompt + assistant response) to the
+/// ConversationStore. Loads existing history, appends the new messages,
+/// and saves the full log.
+fn persist_turn(
+  session: HermesSession,
+  prompt: String,
+  response: Message,
+) -> Nil {
+  let existing = case
+    conversation.load(session.conv_store, session.conversation_id)
+  {
+    Ok(option.Some(json_str)) ->
+      agent_checkpoint.messages_from_json_string(json_str)
+    _ -> []
+  }
+  let updated = list.append(existing, [message.User(prompt), response])
+  let json_str = agent_checkpoint.messages_to_json_string(updated)
+  case
+    conversation.save(session.conv_store, session.conversation_id, json_str)
+  {
+    Ok(_) -> Nil
+    Error(_) ->
+      io.println(
+        "[warn] Failed to save conversation " <> session.conversation_id,
+      )
   }
 }
 
@@ -167,74 +168,80 @@ pub fn run_prompt(
 // Reset
 // ═══════════════════════════════════════════════════════════════
 
-/// Reset the session: stop the old agent, complete the session, create fresh.
+/// Reset the session: stop the old agent, create a fresh conversation.
 ///
-/// The workspace (VFS + KV) persists across resets — only chat history is cleared.
+/// The workspace (VFS + KV) persists across resets — only chat history
+/// is cleared by creating a new conversation.
 pub fn reset(
   config: SessionConfig,
   session: HermesSession,
+  db: Db,
 ) -> Result(HermesSession, Nil) {
-  // Complete the old session in DB first (so create gets a new one).
-  let _ = db.complete_session(session.global_conn, session.session_id)
+  // Stop old agent
+  pig.stop(session.agent)
 
-  // Try to create a new session. If it fails, restart the old agent
-  // so the caller isn't left with a dead session.
-  case
-    create(
-      config,
-      session.global_conn,
-      session.workspace_conn,
-      session.user_key,
+  // Create a brand-new conversation (not get_or_create, which would find the old one)
+  use conversation_id <- result.try(
+    pg_conversation.create_new_for_user(
+      db:,
+      agent_id: config.agent_name,
+      user_key: session.user_key,
     )
-  {
-    Ok(new_session) -> {
-      // New session ready — stop old agent.
-      pig.stop(session.agent)
-      Ok(new_session)
-    }
-    Error(e) -> {
-      // Create failed. Old agent is still alive — restart the completed
-      // DB session so the old agent can keep working.
-      case
-        db.get_or_create_session_for_user(session.global_conn, session.user_key)
-      {
-        Ok(_) -> Nil
-        Error(_) ->
-          io.println(
-            "[error] session.reset: both new session creation and fallback failed for user: "
-            <> session.user_key,
-          )
-      }
-      Error(e)
-    }
-  }
+    |> result.replace_error(Nil),
+  )
+
+  // Start fresh agent
+  use agent <- result.try(
+    start_agent(config, [])
+    |> result.replace_error(Nil),
+  )
+
+  let conv_store = pg_conversation.from_db(db:)
+
+  Ok(HermesSession(
+    agent:,
+    workspace_conn: session.workspace_conn,
+    conv_store:,
+    conversation_id:,
+    user_key: session.user_key,
+    run_timeout_ms: config.run_timeout_ms,
+  ))
 }
 
+// ═══════════════════════════════════════════════════════════════
+// Load
 // ═══════════════════════════════════════════════════════════════
 
 /// Load or create a session for a user.
 ///
-/// If an active session exists in the DB, creates a Pig agent seeded
-/// with the last N messages from that session via with_initial_history().
-/// If no session exists, creates a fresh one.
+/// If a conversation exists in the DB, creates a Pig agent seeded
+/// with the last N messages from that conversation via with_initial_history().
+/// If no conversation exists, creates a fresh one.
 pub fn load(
   config: SessionConfig,
-  global_conn: Db,
+  db: Db,
   workspace_conn: sqlight.Connection,
   user_key: String,
 ) -> Result(HermesSession, Nil) {
-  // Get or create session for user
-  use session_id <- result.try(
-    db.get_or_create_session_for_user(global_conn, user_key)
+  // Get or create conversation for user
+  use conversation_id <- result.try(
+    pg_conversation.get_or_create_for_user(
+      db:,
+      agent_id: config.agent_name,
+      user_key:,
+    )
     |> result.replace_error(Nil),
   )
 
   // Load recent messages for history seeding
-  let history = case
-    db.get_recent_messages(global_conn, session_id, config.history_limit)
-  {
-    Ok(messages) -> messages_to_history(messages)
-    Error(_) -> []
+  let conv_store = pg_conversation.from_db(db:)
+  let history = case conversation.load(conv_store, conversation_id) {
+    Ok(option.Some(json_str)) -> {
+      let all_messages = agent_checkpoint.messages_from_json_string(json_str)
+      // Only seed the last N messages (history_limit)
+      take_last_n(all_messages, config.history_limit)
+    }
+    _ -> []
   }
 
   // Start Pig agent with optional history
@@ -246,8 +253,8 @@ pub fn load(
   Ok(HermesSession(
     agent:,
     workspace_conn:,
-    global_conn:,
-    session_id:,
+    conv_store:,
+    conversation_id:,
     user_key:,
     run_timeout_ms: config.run_timeout_ms,
   ))
@@ -297,15 +304,14 @@ fn message_content(msg: Message) -> String {
   }
 }
 
-/// Convert DB ChatMessage rows to Pig Message list for history seeding.
-/// Lossy: tool calls, thinking blocks, tool results are not preserved.
-fn messages_to_history(messages: List(db.ChatMessage)) -> List(Message) {
-  list.map(messages, fn(msg) {
-    case msg.role {
-      "user" -> message.User(msg.content)
-      "assistant" -> message.Assistant(msg.content, [], option.None, option.None)
-      "system" -> message.System(msg.content)
-      _ -> message.User(msg.content)
+/// Take the last N elements of a list (preserving order).
+fn take_last_n(messages: List(Message), n: Int) -> List(Message) {
+  let len = list.length(messages)
+  case len <= n {
+    True -> messages
+    False -> {
+      let drop = len - n
+      list.drop(messages, drop)
     }
-  })
+  }
 }

@@ -5,18 +5,17 @@
 ////
 //// Requires: docker container running (bin/postgres.sh)
 
+import gabsurd/client
+import gabsurd/queue
+import gabsurd/task
 import gleam/int
 import gleam/json
 import gleam/option
 import gleeunit
 import gleeunit/should
-import gabsurd/client
-import gabsurd/queue
-import gabsurd/task
-import yard/gabsurd_checkpointer
-import yard/checkpoint
 import testing
-
+import yard/checkpoint
+import yard/gabsurd_checkpointer
 
 pub fn main() {
   gleeunit.main()
@@ -27,19 +26,19 @@ fn with_setup(test_fn: fn(client.Db, String, task.Claim) -> a) -> a {
   testing.with_pg_db(fn(db) {
     let assert Ok(Nil) = queue.create(db, queue_name)
 
-  // Spawn a task and claim it so we have a valid run_id
-  let assert Ok(_spawned) =
-    task.spawn(
-      db,
-      queue_name,
-      "test_task",
-      json.object([#("agent_id", json.string("agent-1"))]),
-      task.new_options(),
-    )
-  let assert Ok(claims) = task.claim(db, queue_name, "test-worker", 300, 1)
-  let assert [claim] = claims
+    // Spawn a task and claim it so we have a valid run_id
+    let assert Ok(_spawned) =
+      task.spawn(
+        db,
+        queue_name,
+        "test_task",
+        json.object([#("agent_id", json.string("agent-1"))]),
+        task.new_options(),
+      )
+    let assert Ok(claims) = task.claim(db, queue_name, "test-worker", 300, 1)
+    let assert [claim] = claims
 
-  let result = test_fn(db, queue_name, claim)
+    let result = test_fn(db, queue_name, claim)
 
     let _ = queue.drop(db, queue_name)
     result
@@ -57,7 +56,8 @@ pub fn save_then_load_checkpoint_test() {
         claim_timeout: 300,
       )
 
-    let result = checkpoint.save(cp, "0:greet", "{\"type\":\"string\",\"value\":\"hi\"}")
+    let result =
+      checkpoint.save(cp, "0:greet", "{\"type\":\"string\",\"value\":\"hi\"}")
     should.be_ok(result)
 
     let loaded = checkpoint.load(cp, "0:greet")

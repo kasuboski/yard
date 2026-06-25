@@ -9,8 +9,8 @@
 //// 4. If no checkpoints (first attempt): append user message, checkpoint it
 //// 5. Resolve entry point from the assembled message log
 
-import gleam/option
 import gleam/list
+import gleam/option
 import pig/ai/message.{type Message, User}
 import yard/agent_checkpoint.{type EntryPoint}
 import yard/checkpoint.{type Checkpointer}
@@ -84,5 +84,4 @@ pub fn assemble_history(
 pub type AssemblyError {
   AssemblyError(String)
 }
-
 /// Parse a JSON array string into a List(Message).
