@@ -49,16 +49,6 @@ run = "cd yard && gleam check"
 description = "Check formatting for the yard project"
 run = "cd yard && gleam format --check"
 
-[tasks."yard:gen"]
-description = "Regenerate Parrot SQL codegen (sql.gleam from SQL sources)"
-run = """
-cd yard
-rm -f /tmp/yard_schema_gen.db
-sqlite3 /tmp/yard_schema_gen.db < src/yard/sql/schema.sql
-gleam run -m parrot -- --sqlite /tmp/yard_schema_gen.db
-rm -f /tmp/yard_schema_gen.db
-"""
-
 [tasks."yard:build"]
 description = "Build the yard project"
 run = "cd yard && gleam build"

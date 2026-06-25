@@ -2,7 +2,7 @@ Mono repo for Ballast, Chute, and Yard.
 
 Chute is a language tailored for LLM generation. Read knowledge/chute.md to learn more.
 Ballast is the runtime for Chute. It takes in the Chute code provides the capabilities for the effects defined in Chute and executes the code. Read knowledge/ballast.md to learn more.
-Yard is the host runtime that manages agent deployment, scheduling, and observability. It uses **Parrot** (sqlc wrapper) for type-safe SQL codegen — see `yard/PARROT.md` for setup and regeneration.
+Yard is the host runtime that manages agent deployment, scheduling, and observability. The global registry (agents, skills, runs, chat) is backed by PostgreSQL via `gabsurd/client.Db`. Per-agent workspace (VFS/KV) uses SQLite via `pig/workspace`.
 
 Both projects use gleam with the erlang target. mise and mise.toml provide the environment setup.
 
@@ -21,8 +21,9 @@ Per-project commands:
 - `mise run chute:build` / `mise run ballast:build` / `mise run yard:build`
 - `mise run chute:test` / `mise run ballast:test` / `mise run yard:test`
 
-SQL codegen:
-- `mise run yard:gen` — regenerate `yard/src/yard/sql.gleam` from SQL sources (see `yard/PARROT.md`)
+Database:
+- `bin/postgres.sh` — starts Docker container, applies all schemas (Absurd + pg_schema.sql + durable_schema.sql)
+- Schema edits go in `yard/src/yard/sql/pg_schema.sql` (registry) or `yard/src/yard/sql/durable_schema.sql` (conversations/events)
 
 ## Code Search
 
