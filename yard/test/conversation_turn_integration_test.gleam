@@ -6,6 +6,7 @@
 //// Requires: docker container running (bin/postgres.sh)
 
 import gleam/int
+import gleam/json
 import gleam/option
 import gleam/string
 import gluid
@@ -16,6 +17,7 @@ import gabsurd/queue
 import gabsurd/task
 import pig/ai/message.{Assistant, User}
 import pig/ai/stop_reason.{Stop}
+import testing
 import yard/agent_checkpoint
 import yard/checkpoint
 import yard/conversation
@@ -48,9 +50,6 @@ fn with_db_queue(
     result
   })
 }
-
-import gleam/json
-import testing
 
 /// First turn: no conversation history exists.
 pub fn first_turn_no_history_test() {

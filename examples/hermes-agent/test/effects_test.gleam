@@ -1,5 +1,6 @@
 import ballast/value.{ErrorVal, ListVal, NilVal, OkVal, RecordVal, StringVal}
 import gleam/dict
+import gleam/erlang/process
 import gleam/int
 import gleam/list
 import gleam/string
@@ -374,11 +375,25 @@ pub fn all_handlers_with_global_has_13_keys_test() {
 fn with_pg_db(test_fn: fn(client.Db, String) -> a) -> a {
   let queue_name = "hermes_test_" <> int.to_string(client.unique_integer())
   case testing.try_db() {
-    Ok(db) -> {
+    Ok(#(db, pid)) -> {
       let assert Ok(Nil) = queue.create(db, queue_name)
       let result = test_fn(db, queue_name)
       let _ = queue.drop(db, queue_name)
-      let _ = pg_cron.unschedule_all(db)
+      // Clean up only hermes_ jobs created by this test
+      case pg_cron.list_jobs(db) {
+        Ok(jobs) ->
+          list.each(jobs, fn(j) {
+            case string.starts_with(j.job_name, "hermes_") {
+              True -> {
+                let _ = pg_cron.unschedule(db, job_name: j.job_name)
+                Nil
+              }
+              False -> Nil
+            }
+          })
+        Error(_) -> Nil
+      }
+      process.send_exit(pid)
       result
     }
     Error(_) -> {
@@ -393,7 +408,7 @@ pub fn schedule_cron_handler_test() {
   // This test requires PostgreSQL with gabsurd extension
   // Skip if gabsurd is not available (expected in dev environment)
   case testing.try_db() {
-    Ok(_) -> {
+    Ok(#(_, check_pid)) -> {
       with_both_dbs(fn(_workspace_conn, global_conn) {
         with_pg_db(fn(pg_db, queue_name) {
           let handler = effects.schedule_cron_handler(pg_db, queue_name, global_conn)
@@ -421,6 +436,7 @@ pub fn schedule_cron_handler_test() {
           let assert 1 = list.length(items)
         })
       })
+      process.send_exit(check_pid)
       Nil
     }
     Error(_) -> Nil // Skip gracefully if gabsurd not available
@@ -430,7 +446,7 @@ pub fn schedule_cron_handler_test() {
 pub fn schedule_cron_bad_args_test() {
   // This test requires PostgreSQL with gabsurd extension
   case testing.try_db() {
-    Ok(_) -> {
+    Ok(#(_, check_pid)) -> {
       with_both_dbs(fn(_workspace_conn, global_conn) {
         with_pg_db(fn(pg_db, queue_name) {
           let handler = effects.schedule_cron_handler(pg_db, queue_name, global_conn)
@@ -440,6 +456,7 @@ pub fn schedule_cron_bad_args_test() {
           let assert True = string.contains(msg, "expected 2")
         })
       })
+      process.send_exit(check_pid)
       Nil
     }
     Error(_) -> Nil // Skip gracefully
@@ -449,7 +466,7 @@ pub fn schedule_cron_bad_args_test() {
 pub fn list_crons_handler_empty_test() {
   // This test requires PostgreSQL with gabsurd extension
   case testing.try_db() {
-    Ok(_) -> {
+    Ok(#(_, check_pid)) -> {
       with_pg_db(fn(pg_db, _queue_name) {
         let handler = effects.list_crons_handler(pg_db)
 
@@ -457,6 +474,7 @@ pub fn list_crons_handler_empty_test() {
         let assert Ok(OkVal(ListVal(items))) = result
         let assert 0 = list.length(items)
       })
+      process.send_exit(check_pid)
       Nil
     }
     Error(_) -> Nil // Skip gracefully
@@ -466,7 +484,7 @@ pub fn list_crons_handler_empty_test() {
 pub fn cancel_cron_handler_test() {
   // This test requires PostgreSQL with gabsurd extension
   case testing.try_db() {
-    Ok(_) -> {
+    Ok(#(_, check_pid)) -> {
       with_both_dbs(fn(_workspace_conn, global_conn) {
         with_pg_db(fn(pg_db, queue_name) {
           let schedule_handler = effects.schedule_cron_handler(pg_db, queue_name, global_conn)
@@ -498,6 +516,7 @@ pub fn cancel_cron_handler_test() {
           let assert 0 = list.length(items)
         })
       })
+      process.send_exit(check_pid)
       Nil
     }
     Error(_) -> Nil // Skip gracefully
@@ -507,7 +526,7 @@ pub fn cancel_cron_handler_test() {
 pub fn all_handlers_with_cron_has_16_keys_test() {
   // This test requires PostgreSQL with gabsurd extension
   case testing.try_db() {
-    Ok(_) -> {
+    Ok(#(_, check_pid)) -> {
       with_both_dbs(fn(workspace_conn, global_conn) {
         with_pg_db(fn(pg_db, queue_name) {
           let collector = effects.new_event_collector()
@@ -528,6 +547,7 @@ pub fn all_handlers_with_cron_has_16_keys_test() {
           effects.collector_stop(collector)
         })
       })
+      process.send_exit(check_pid)
       Nil
     }
     Error(_) -> Nil // Skip gracefully

@@ -174,6 +174,6 @@ pub fn main() {
   process.send(yard_dispatcher, dispatcher.Stop)
   io.println("")
   io.println("Observability: " <> yard_session_path)
-  io.println("Messages:      " <> db_url())
+  io.println("Messages:      PostgreSQL")
   io.println("Done.")
 }

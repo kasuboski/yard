@@ -694,7 +694,7 @@ pub fn complete_run(
         result = $2,
         gas_used = $3,
         duration_ms = $4,
-        completed_at = $5
+        completed_at = to_timestamp($5 / 1000.0)
     WHERE id = $6
     "
   case client.exec(db, #(sql, [

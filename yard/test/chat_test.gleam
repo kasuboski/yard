@@ -120,7 +120,8 @@ pub fn get_recent_messages_returns_empty_when_limit_zero_test() {
     let user_key = "telegram:66666"
     let assert Ok(session_id) =
       db.get_or_create_session_for_user(db, user_key)
-    let assert Ok(recent) = db.get_recent_messages(db, session_id, 10)
+    let assert Ok(Nil) = db.save_chat_message(db, session_id, "user", "hello")
+    let assert Ok(recent) = db.get_recent_messages(db, session_id, 0)
     let assert 0 = list.length(recent)
   })
 }

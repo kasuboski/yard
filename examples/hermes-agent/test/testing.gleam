@@ -19,14 +19,14 @@ pub fn with_clean_db(test_fn: fn(Db) -> a) -> a {
   result
 }
 
-/// Check if Postgres is reachable without starting a pool.
-/// Used by cron tests that skip gracefully when no DB is available.
-pub fn try_db() -> Result(Db, Nil) {
+/// Check if Postgres is reachable and return a pool if so.
+/// Returns both the Db and Pid so callers can close the pool after use.
+pub fn try_db() -> Result(#(Db, process.Pid), Nil) {
   case client.start(db_url) {
     Ok(started) -> {
       let db = started.data
       case client.exec(db, #("SELECT 1", [])) {
-        Ok(_) -> Ok(db)
+        Ok(_) -> Ok(#(db, started.pid))
         Error(_) -> {
           process.send_exit(started.pid)
           Error(Nil)

@@ -499,13 +499,16 @@ pub fn schedule_cron_handler(
   }
 }
 
-/// Handler for list_crons effect: lists all active schedules via pg_cron.
+/// Handler for list_crons effect: lists Hermes-managed schedules via pg_cron.
+/// Only returns jobs with the `hermes_` prefix to avoid exposing unrelated DB jobs.
 pub fn list_crons_handler(pg_db: Db) -> EffectHandler {
   fn(_name, _args) {
     case pg_cron.list_jobs(pg_db) {
       Ok(jobs) -> {
         let items =
-          list.map(jobs, fn(j) {
+          jobs
+          |> list.filter(fn(j) { string.starts_with(j.job_name, "hermes_") })
+          |> list.map(fn(j) {
             RecordVal([
               #("job_name", StringVal(j.job_name)),
               #("schedule", StringVal(j.schedule)),
@@ -519,15 +522,21 @@ pub fn list_crons_handler(pg_db: Db) -> EffectHandler {
   }
 }
 
-/// Handler for cancel_cron effect: cancels a schedule via pg_cron.
+/// Handler for cancel_cron effect: cancels a Hermes-managed schedule.
+/// Rejects job names that don't have the `hermes_` prefix to prevent
+/// cancelling unrelated database cron jobs.
 pub fn cancel_cron_handler(pg_db: Db) -> EffectHandler {
   fn(_name, args) {
     case args {
       [StringVal(job_name)] ->
-        case pg_cron.unschedule(pg_db, job_name:) {
-          Ok(_) -> Ok(OkVal(NilVal))
-          Error(pg_cron.CronError(msg)) ->
-            Ok(ErrorVal(StringVal("cancel_cron: " <> msg)))
+        case string.starts_with(job_name, "hermes_") {
+          False -> Ok(ErrorVal(StringVal("cancel_cron: can only cancel hermes_ jobs")))
+          True ->
+            case pg_cron.unschedule(pg_db, job_name:) {
+              Ok(_) -> Ok(OkVal(NilVal))
+              Error(pg_cron.CronError(msg)) ->
+                Ok(ErrorVal(StringVal("cancel_cron: " <> msg)))
+            }
         }
       _ -> Ok(ErrorVal(StringVal("cancel_cron: expected 1 string arg (job_name)")))
     }
