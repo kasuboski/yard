@@ -18,6 +18,8 @@
 import gleam/list
 import gleam/option
 import gleam/otp/actor.{type StartError}
+import gleam/result
+import logging
 import pig
 import pig/ai/error.{type AiError}
 import pig/ai/message.{type Message}
@@ -66,10 +68,17 @@ pub fn execute_turn(
   agent_name agent_name: String,
 ) -> Result(TurnResult, TurnError) {
   // 1. Load conversation history from the store
-  let conv_history = case conversation.load(store, conversation_id) {
-    Ok(option.Some(json_str)) ->
+  use history_option <- result.try(
+    conversation.load(store, conversation_id)
+    |> result.map_error(fn(_) {
+      TurnError("failed to load conversation history")
+    }),
+  )
+
+  let conv_history = case history_option {
+    option.Some(json_str) ->
       agent_checkpoint.messages_from_json_string(json_str)
-    _ -> []
+    option.None -> []
   }
 
   // 2. Append the user message
@@ -96,7 +105,14 @@ pub fn execute_turn(
           // 5. Save the updated conversation
           let all_messages = list.append(messages, [final_message])
           let json_str = agent_checkpoint.messages_to_json_string(all_messages)
-          let _ = conversation.save(store, conversation_id, json_str)
+          case conversation.save(store, conversation_id, json_str) {
+            Ok(_) -> Nil
+            Error(_) ->
+              logging.log(
+                logging.Error,
+                "agent_turn: failed to save conversation",
+              )
+          }
           pig.stop(agent)
           Ok(TurnResult(messages: all_messages, final_message:))
         }

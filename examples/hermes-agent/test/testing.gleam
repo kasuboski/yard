@@ -39,13 +39,20 @@ pub fn try_db() -> Result(#(Db, process.Pid), Nil) {
 
 /// Truncate registry tables for a clean test state.
 pub fn clean_registry(db: Db) -> Nil {
+  // Core registry tables
   let _ =
     client.exec(
       db,
       #(
-        "TRUNCATE TABLE agent_handlers, agents, skills, deployments, runs, chat_messages, chat_sessions, providers, conversations, yard_events RESTART IDENTITY CASCADE",
+        "TRUNCATE TABLE agent_handlers, agents, skills, deployments, runs, chat_messages, chat_sessions, providers, conversations RESTART IDENTITY CASCADE",
         [],
       ),
+    )
+  // Yard events table (may not exist in all environments)
+  let _ =
+    client.exec(
+      db,
+      #("TRUNCATE TABLE yard_events RESTART IDENTITY CASCADE", []),
     )
   Nil
 }

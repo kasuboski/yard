@@ -21,8 +21,8 @@ pub fn main() {
 fn with_server(test_fn: fn(Int) -> a) -> a {
   let port = 8390 + int.absolute_value(client.unique_integer()) % 100
   testing.with_pg_db(fn(db) {
-    // Start the UI server — ignore failures (the server may already be bound)
-    let _ = server.start(db:, port:)
+    // Start the UI server — fail if it doesn't start
+    let assert Ok(_) = server.start(db:, port:)
     // Give the server a moment to start
     timer_sleep(200)
 

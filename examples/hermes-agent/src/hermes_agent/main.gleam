@@ -83,7 +83,8 @@ fn ui_port() -> Int {
   case envoy.get("YARD_UI_PORT") {
     Ok(port_str) ->
       case int.parse(port_str) {
-        Ok(port) -> port
+        Ok(port) if port > 0 && port <= 65_535 -> port
+        Ok(_) -> 4001
         Error(_) -> 4001
       }
     Error(_) -> 4001

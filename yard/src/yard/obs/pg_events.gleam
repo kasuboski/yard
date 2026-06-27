@@ -13,6 +13,7 @@ import gabsurd/client.{type Db}
 import gleam/erlang/process.{type Name, type Subject}
 import gleam/otp/actor.{type StartError}
 import gleam/otp/supervision
+import logging
 import yard/obs/events.{type HostEvent}
 import yard/pg_events
 
@@ -65,6 +66,10 @@ fn handle_message(
     Ok(_) -> actor.continue(state)
     Error(_) -> {
       // Log and continue — don't crash the observability pipeline
+      logging.log(
+        logging.Error,
+        "pg_events: failed to write event to yard_events",
+      )
       actor.continue(state)
     }
   }

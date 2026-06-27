@@ -85,7 +85,7 @@ pub fn create(
   user_key: String,
 ) -> Result(HermesSession, Nil) {
   use conversation_id <- result.try(
-    pg_conversation.get_or_create_for_user(
+    pg_conversation.create_new_for_user(
       db:,
       agent_id: config.agent_name,
       user_key:,

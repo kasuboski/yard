@@ -59,7 +59,7 @@ else
   for NAME in "${NAMES[@]}"; do
     echo
     # match `pub fn name(` OR `fn name(` for internal, and the type def line
-    grep -nE "^[[:space:]]*(pub )?fn ${NAME}[[:space:]]*(\\(|<-)" "$FILE" \
+    grep -nE "^[[:space:]]*(pub )?fn ${NAME}[[:space:]]*\\(" "$FILE" \
       || grep -nE "^(pub )?(opaque )?type ${NAME}\\b" "$FILE" \
       || echo "  '$NAME' not found in $MODULE"
   done

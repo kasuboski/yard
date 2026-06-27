@@ -68,7 +68,8 @@ fn ui_port() -> Int {
   case envoy.get("YARD_UI_PORT") {
     Ok(port_str) ->
       case int.parse(port_str) {
-        Ok(port) -> port
+        Ok(port) if port > 0 && port <= 65_535 -> port
+        Ok(_) -> 4001
         Error(_) -> 4001
       }
     Error(_) -> 4001
@@ -98,7 +99,7 @@ pub fn main() {
   let ui = ui_port()
 
   io.println("LLM:       " <> openai_model() <> " @ " <> openai_base_url())
-  io.println("DB:        " <> db_url())
+  io.println("DB:        PostgreSQL")
   io.println("Workspace: " <> workspace_path)
   io.println("Obs:       " <> yard_session_path)
   io.println("UI:        http://localhost:" <> int_to_string(ui))
