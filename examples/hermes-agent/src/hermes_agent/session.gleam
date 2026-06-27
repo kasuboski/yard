@@ -156,7 +156,7 @@ pub fn reset(
   db: Db,
 ) -> Result(HermesSession, Nil) {
   use conversation_id <- result.try(
-    pg_conversation.create_new_for_user(
+    pg_conversation.clear_for_user(
       db:,
       agent_id: config.agent_name,
       user_key: session.user_key,

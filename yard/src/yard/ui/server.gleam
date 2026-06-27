@@ -30,6 +30,7 @@ pub fn start(
   }
 
   mist.new(handler)
+  |> mist.bind("127.0.0.1")
   |> mist.port(port)
   |> mist.start()
 }

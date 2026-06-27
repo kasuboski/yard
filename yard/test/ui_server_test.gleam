@@ -4,6 +4,7 @@
 //// Requires: docker container running (bin/postgres.sh)
 
 import gabsurd/client
+import gleam/erlang/process
 import gleam/http/request
 import gleam/http/response
 import gleam/httpc
@@ -22,11 +23,16 @@ fn with_server(test_fn: fn(Int) -> a) -> a {
   let port = 8390 + int.absolute_value(client.unique_integer()) % 100
   testing.with_pg_db(fn(db) {
     // Start the UI server — fail if it doesn't start
-    let assert Ok(_) = server.start(db:, port:)
-    // Give the server a moment to start
-    timer_sleep(200)
-
-    test_fn(port)
+    case server.start(db:, port:) {
+      Ok(started) -> {
+        timer_sleep(200)
+        let result = test_fn(port)
+        // Stop the server to release the port
+        process.send_exit(started.pid)
+        result
+      }
+      Error(_) -> panic as "Failed to start UI test server"
+    }
   })
 }
 

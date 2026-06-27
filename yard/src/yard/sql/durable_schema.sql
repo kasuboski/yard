@@ -20,8 +20,9 @@ CREATE TABLE IF NOT EXISTS conversations (
   updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_conversations_agent_user
-  ON conversations(agent_id, user_key);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_conversations_agent_user
+  ON conversations(agent_id, user_key)
+  WHERE agent_id <> '' AND user_key <> '';
 
 -- ─── Yard Events ─────────────────────────────────────────────────────
 -- Observability events, replacing JSONL session files.

@@ -102,8 +102,9 @@ pub fn execute_turn(
       //    the last message type and resumes appropriately.
       case pig.run_continue(agent) {
         Ok(final_message) -> {
-          // 5. Save the updated conversation
-          let all_messages = list.append(messages, [final_message])
+          // 5. Get the full message history (including intermediate tool calls/results)
+          let all_messages = pig.history(agent)
+          // 6. Save the updated conversation
           let json_str = agent_checkpoint.messages_to_json_string(all_messages)
           case conversation.save(store, conversation_id, json_str) {
             Ok(_) -> Nil

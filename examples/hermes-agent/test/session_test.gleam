@@ -213,8 +213,8 @@ pub fn reset_session_creates_new_agent_test() {
     let assert Ok(new_sess) =
       session.reset(test_config(provider), sess, global_conn)
 
-    // Different conversation ID (new conversation created)
-    let assert True = new_sess.conversation_id != sess.conversation_id
+    // Same conversation row (unique per user), but its messages were cleared
+    let assert True = new_sess.conversation_id == sess.conversation_id
 
     // Same user key
     let assert "test_user" = new_sess.user_key

@@ -33,15 +33,19 @@ pub fn from_db(db db: Db) -> ConversationStore {
 /// Returns the conversation_id (UUID). If a conversation already exists
 /// for this agent_id + user_key, returns its ID. Otherwise inserts a
 /// new row with an empty message log.
+///
+/// Uses an atomic upsert to avoid race conditions between concurrent
+/// requests for the same agent + user.
 pub fn get_or_create_for_user(
   db db: Db,
   agent_id agent_id: String,
   user_key user_key: String,
 ) -> Result(String, ConversationError) {
   let sql =
-    "SELECT id::text FROM conversations
-     WHERE agent_id = $1 AND user_key = $2
-     ORDER BY updated_at DESC LIMIT 1"
+    "INSERT INTO conversations (id, agent_id, user_key, messages)
+     VALUES (gen_random_uuid(), $1, $2, '[]')
+     ON CONFLICT (agent_id, user_key) WHERE agent_id <> '' AND user_key <> '' DO UPDATE SET agent_id = EXCLUDED.agent_id
+     RETURNING id::text"
   case
     client.query_one(db, #(
       sql,
@@ -53,14 +57,46 @@ pub fn get_or_create_for_user(
     ))
   {
     Ok(id) -> Ok(id)
-    Error(client.NotFound) -> create_new_for_user(db:, agent_id:, user_key:)
+    Error(e) -> Error(ConversationError(error_to_string(e)))
+  }
+}
+
+/// Clear the messages on the conversation for a given agent + user,
+/// returning the conversation id. This is the "reset" operation under the
+/// unique (agent_id, user_key) constraint: rather than creating a new row,
+/// it blanks the existing one. If no conversation exists, one is created.
+pub fn clear_for_user(
+  db db: Db,
+  agent_id agent_id: String,
+  user_key user_key: String,
+) -> Result(String, ConversationError) {
+  // Upsert with empty messages: either creates a fresh row or blanks the
+  // existing one. Atomic under the unique (agent_id, user_key) index.
+  let sql =
+    "INSERT INTO conversations (id, agent_id, user_key, messages)
+     VALUES (gen_random_uuid(), $1, $2, '[]')
+     ON CONFLICT (agent_id, user_key) WHERE agent_id <> '' AND user_key <> '' DO UPDATE
+       SET messages = '[]', updated_at = now()
+     RETURNING id::text"
+  case
+    client.query_one(db, #(
+      sql,
+      [
+        dev.ParamString(agent_id),
+        dev.ParamString(user_key),
+      ],
+      conversation_id_decoder(),
+    ))
+  {
+    Ok(id) -> Ok(id)
     Error(e) -> Error(ConversationError(error_to_string(e)))
   }
 }
 
 /// Create a brand-new conversation for a given agent + user.
-/// Always inserts a new row (does NOT look up existing).
-/// Used by session.reset() to start a fresh conversation.
+/// Deprecated under the unique (agent_id, user_key) constraint — use
+/// clear_for_user for resets. Kept for callers that explicitly want a
+/// distinct row (will fail if one already exists for this user).
 pub fn create_new_for_user(
   db db: Db,
   agent_id agent_id: String,
@@ -113,10 +149,10 @@ fn load_from_pg(
   }
 }
 
-/// Save messages to a conversation (upsert).
-/// If the conversation row already exists (created via get_or_create_for_user),
-/// only messages and updated_at are changed. If it doesn't exist yet
-/// (direct save), a row is inserted with empty agent_id/user_key.
+/// Save messages to a conversation (upsert by id).
+/// If the conversation row already exists (created via get_or_create_for_user
+/// or clear_for_user), only messages and updated_at are changed. If it does
+/// not exist yet (direct save), a row is inserted.
 fn save_to_pg(
   db: Db,
   conversation_id: String,
