@@ -66,6 +66,7 @@ pub fn execute_turn(
   tools tools: List(tool.Tool),
   system_prompt system_prompt: String,
   agent_name agent_name: String,
+  run_timeout_ms run_timeout_ms: Int,
 ) -> Result(TurnResult, TurnError) {
   // 1. Load conversation history from the store
   use history_option <- result.try(
@@ -100,7 +101,7 @@ pub fn execute_turn(
       // 4. Run the agent — pig.run_continue() detects the trailing User
       //    message and calls the provider. On crash recovery, it detects
       //    the last message type and resumes appropriately.
-      case pig.run_continue(agent) {
+      case pig.run_continue_with_timeout(agent, run_timeout_ms) {
         Ok(final_message) -> {
           // 5. Get the full message history (including intermediate tool calls/results)
           let all_messages = pig.history(agent)

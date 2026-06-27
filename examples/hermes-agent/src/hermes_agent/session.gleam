@@ -131,6 +131,7 @@ pub fn run_prompt(
       tools: session.config.tools,
       system_prompt: session.config.system_prompt,
       agent_name: session.config.agent_name,
+      run_timeout_ms: session.config.run_timeout_ms,
     )
   {
     Ok(agent_turn.TurnResult(final_message:, ..)) ->

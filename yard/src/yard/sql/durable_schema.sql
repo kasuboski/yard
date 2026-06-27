@@ -20,6 +20,11 @@ CREATE TABLE IF NOT EXISTS conversations (
   updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Drop any pre-existing non-unique index with this name so existing
+-- deployments pick up the unique partial index. (CREATE ... IF NOT EXISTS
+-- would otherwise no-op against the old index.)
+DROP INDEX IF EXISTS idx_conversations_agent_user;
+
 CREATE UNIQUE INDEX IF NOT EXISTS idx_conversations_agent_user
   ON conversations(agent_id, user_key)
   WHERE agent_id <> '' AND user_key <> '';

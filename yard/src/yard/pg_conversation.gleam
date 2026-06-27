@@ -7,6 +7,7 @@
 import gabsurd/client.{type Db}
 import gleam/dynamic/decode
 import gleam/option
+import gleam/result
 import gleam/string
 import gluid
 import parrot/dev
@@ -41,6 +42,7 @@ pub fn get_or_create_for_user(
   agent_id agent_id: String,
   user_key user_key: String,
 ) -> Result(String, ConversationError) {
+  use Nil <- result.try(validate_user_keys(agent_id, user_key))
   let sql =
     "INSERT INTO conversations (id, agent_id, user_key, messages)
      VALUES (gen_random_uuid(), $1, $2, '[]')
@@ -70,6 +72,7 @@ pub fn clear_for_user(
   agent_id agent_id: String,
   user_key user_key: String,
 ) -> Result(String, ConversationError) {
+  use Nil <- result.try(validate_user_keys(agent_id, user_key))
   // Upsert with empty messages: either creates a fresh row or blanks the
   // existing one. Atomic under the unique (agent_id, user_key) index.
   let sql =
@@ -124,6 +127,19 @@ pub fn create_new_for_user(
 fn conversation_id_decoder() -> decode.Decoder(String) {
   use id <- decode.field(0, decode.string)
   decode.success(id)
+}
+
+/// Reject empty agent_id / user_key before hitting the partial unique index.
+/// The unique index excludes empty values, so an empty key would bypass the
+/// atomicity guarantee and let duplicates accumulate.
+fn validate_user_keys(
+  agent_id: String,
+  user_key: String,
+) -> Result(Nil, ConversationError) {
+  case agent_id == "" || user_key == "" {
+    True -> Error(ConversationError("agent_id and user_key must be non-empty"))
+    False -> Ok(Nil)
+  }
 }
 
 fn messages_decoder() -> decode.Decoder(String) {
