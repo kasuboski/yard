@@ -16,7 +16,9 @@
 ////   HERMES_DB_DIR         — Directory for DB files (default: "/tmp/hermes")
 
 import envoy
+import gabsurd/client
 import gleam/erlang/process
+import gleam/int
 import gleam/io
 import gleam/result
 import pig/ai/openai
@@ -24,12 +26,13 @@ import pig/workspace
 import simplifile
 import telega
 import telega_httpc
-import gabsurd/client
 import yard/db
 import yard/obs/dispatcher
+import yard/obs/pg_events
 import yard/obs/session as yard_session
 import yard/obs/terminal
 import yard/runner
+import yard/ui/server as ui_server
 
 import hermes_agent/chute_exec
 import hermes_agent/gateway
@@ -76,6 +79,18 @@ fn db_url() -> String {
   |> result.unwrap("postgresql://gabsurd:gabsurd@127.0.0.1:5432/gabsurd")
 }
 
+fn ui_port() -> Int {
+  case envoy.get("YARD_UI_PORT") {
+    Ok(port_str) ->
+      case int.parse(port_str) {
+        Ok(port) if port > 0 && port <= 65_535 -> port
+        Ok(_) -> 4001
+        Error(_) -> 4001
+      }
+    Error(_) -> 4001
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════
 // Main
 // ═══════════════════════════════════════════════════════════════
@@ -100,7 +115,7 @@ pub fn main() {
   let assert Ok(yard_sess) = yard_session.start_consumer(yard_session_path)
   process.send(yard_dispatcher, dispatcher.RegisterConsumer(yard_sess))
 
-  io.println("Yard observability started")
+  io.println("Yard observability started (terminal + JSONL)")
   io.println("Obs: " <> yard_session_path)
 
   // ── 2. Database setup ───────────────────────────────────────
@@ -112,7 +127,16 @@ pub fn main() {
   let assert Ok(ws) = workspace.open(workspace_path)
   let workspace_conn = workspace.connection(ws)
 
+  // PostgreSQL events consumer — writes events to yard_events table
+  let assert Ok(yard_pg) = pg_events.start_consumer(global_conn)
+  process.send(yard_dispatcher, dispatcher.RegisterConsumer(yard_pg))
+
+  // ── 2b. UI dashboard ────────────────────────────────────────
+  let ui = ui_port()
+  let assert Ok(_) = ui_server.start(db: global_conn, port: ui)
+
   io.println("DB: " <> dir)
+  io.println("Dashboard: http://localhost:" <> int.to_string(ui))
 
   // ── 3. LLM provider ─────────────────────────────────────────
   let provider =

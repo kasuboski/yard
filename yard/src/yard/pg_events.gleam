@@ -5,10 +5,10 @@
 //// by a `yard_events` table in PostgreSQL, JOINable with gabsurd's
 //// absurd_checkpoints and absurd_runs on run_id.
 
+import gabsurd/client.{type Db}
 import gleam/json
 import gleam/option
 import parrot/dev
-import gabsurd/client.{type Db}
 import yard/obs/events.{type HostEvent}
 
 /// Record a HostEvent to the yard_events table.
@@ -28,20 +28,18 @@ pub fn record_event(
     "
   let run_id = event_run_id(event)
   case
-    client.exec(db, #(
-      sql,
-      [
+    client.exec(
+      db,
+      #(sql, [
         dev.ParamString(run_id),
         dev.ParamString(event_type),
         dev.ParamString(json.to_string(payload)),
-        dev.ParamNullable(
-          case duration_ms {
-            option.Some(ms) -> option.Some(dev.ParamInt(ms))
-            option.None -> option.None
-          },
-        ),
-      ],
-    ))
+        dev.ParamNullable(case duration_ms {
+          option.Some(ms) -> option.Some(dev.ParamInt(ms))
+          option.None -> option.None
+        }),
+      ]),
+    )
   {
     Ok(Nil) -> Ok(Nil)
     Error(e) -> Error(EventStoreError(error_to_string(e)))
@@ -54,7 +52,9 @@ pub type EventStoreError {
 }
 
 /// Extract event_type, payload JSON, and duration_ms from a HostEvent.
-fn event_to_parts(event: HostEvent) -> #(String, json.Json, option.Option(Int)) {
+fn event_to_parts(
+  event: HostEvent,
+) -> #(String, json.Json, option.Option(Int)) {
   case event {
     events.ActorStarted(
       actor_path:,

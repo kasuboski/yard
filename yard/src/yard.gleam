@@ -20,16 +20,16 @@
 ////         │ (JSONL) │  │ (stdout)    │
 ////         └─────────┘  └─────────────┘
 
+import gabsurd/client.{type Db}
 import gleam/erlang/process
 import gleam/list
 import gleam/option
 import gleam/otp/actor
 import gleam/otp/static_supervisor
 import gleam/result
-import gabsurd/client.{type Db}
-import yard/ui/server as ui_server
 import yard/obs/consumer_spec.{type ConsumerSpec}
 import yard/obs/dispatcher
+import yard/ui/server as ui_server
 
 // ── Public Types ─────────────────────────────────────────────────────
 
@@ -113,14 +113,13 @@ pub fn stop(yard: Yard) -> Nil {
 pub fn start_with_ui(
   consumers: List(ConsumerSpec),
   db db: Db,
-  queue_name queue_name: String,
   ui_port ui_port: Int,
 ) -> Result(Yard, actor.StartError) {
   // Start the standard yard stack first
   use yard <- result.try(start(consumers))
 
   // Start the UI server and capture its supervisor PID
-  case ui_server.start(db:, queue_name:, port: ui_port) {
+  case ui_server.start(db:, port: ui_port) {
     Ok(ui_started) ->
       Ok(Yard(
         dispatcher: yard.dispatcher,

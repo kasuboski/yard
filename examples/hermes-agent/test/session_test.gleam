@@ -2,7 +2,9 @@
 ////
 //// Tests the platform-agnostic session management logic.
 //// Uses fake providers (no real LLM calls) to exercise Pig agent lifecycle.
+//// Now uses yard's ConversationStore (conversations table) for persistence.
 
+import gabsurd/client
 import gleam/erlang/process
 import gleam/list
 import gleam/option
@@ -15,9 +17,11 @@ import pig/ai/provider
 import pig/workspace
 import pig/workspace/kv
 import sqlight
-import gabsurd/client
 
-import yard/db
+import yard/agent_checkpoint
+import yard/conversation
+import yard/pg_conversation
+
 import testing
 
 pub fn main() {
@@ -42,7 +46,14 @@ fn with_dbs(test_fn: fn(client.Db, sqlight.Connection) -> a) -> a {
 /// A fake provider that always returns a fixed text response.
 fn fixed_provider(text: String) -> provider.Provider {
   fn(_messages, _tools) {
-    Ok(provider.from_message(message.Assistant(text, [], option.None, option.None)))
+    Ok(
+      provider.from_message(message.Assistant(
+        text,
+        [],
+        option.None,
+        option.None,
+      )),
+    )
   }
 }
 
@@ -51,7 +62,14 @@ fn counting_provider(text: String, counter: Ref(Int)) -> provider.Provider {
   fn(_messages, _tools) {
     let n = counter.get()
     counter.set(n + 1)
-    Ok(provider.from_message(message.Assistant(text, [], option.None, option.None)))
+    Ok(
+      provider.from_message(message.Assistant(
+        text,
+        [],
+        option.None,
+        option.None,
+      )),
+    )
   }
 }
 
@@ -61,7 +79,6 @@ type Ref(a) {
 }
 
 fn new_ref(initial: Int) -> Ref(Int) {
-  let _cell = process.new_subject()
   // Use a simple actor-based ref
   let assert Ok(started) =
     actor.new(initial)
@@ -101,7 +118,7 @@ pub fn create_session_returns_session_test() {
         workspace_conn,
         "test_user",
       )
-    let assert True = string.length(sess.session_id) > 0
+    let assert True = string.length(sess.conversation_id) > 0
     session.stop(sess)
   })
 }
@@ -144,7 +161,7 @@ pub fn run_prompt_returns_response_test() {
   })
 }
 
-pub fn run_prompt_saves_messages_to_db_test() {
+pub fn run_prompt_saves_messages_to_conversation_test() {
   with_dbs(fn(global_conn, workspace_conn) {
     let provider = fixed_provider("Response text")
     let assert Ok(sess) =
@@ -157,14 +174,15 @@ pub fn run_prompt_saves_messages_to_db_test() {
 
     let assert Ok(_response) = session.run_prompt(sess, "User question")
 
-    // Messages should be saved to the DB
-    let assert Ok(messages) = db.get_chat_messages(global_conn, sess.session_id)
+    // Messages should be saved to the conversations table via ConversationStore
+    let store = pg_conversation.from_db(db: global_conn)
+    let assert Ok(option.Some(saved_json)) =
+      conversation.load(store, sess.conversation_id)
+    let messages = agent_checkpoint.messages_from_json_string(saved_json)
     let assert 2 = list.length(messages)
     let assert [user_msg, assistant_msg] = messages
-    let assert "user" = user_msg.role
-    let assert "User question" = user_msg.content
-    let assert "assistant" = assistant_msg.role
-    let assert "Response text" = assistant_msg.content
+    let assert message.User("User question") = user_msg
+    let assert message.Assistant("Response text", _, _, _) = assistant_msg
 
     session.stop(sess)
   })
@@ -191,11 +209,12 @@ pub fn reset_session_creates_new_agent_test() {
     let assert Ok(_) = session.run_prompt(sess, "First prompt")
     let assert 1 = ref.get()
 
-    // Reset — should create a new agent
-    let assert Ok(new_sess) = session.reset(test_config(provider), sess)
+    // Reset — should create a new conversation
+    let assert Ok(new_sess) =
+      session.reset(test_config(provider), sess, global_conn)
 
-    // Different session ID (old session completed, new one created)
-    let assert True = new_sess.session_id != sess.session_id
+    // Same conversation row (unique per user), but its messages were cleared
+    let assert True = new_sess.conversation_id == sess.conversation_id
 
     // Same user key
     let assert "test_user" = new_sess.user_key
@@ -220,7 +239,8 @@ pub fn reset_session_preserves_workspace_test() {
     let assert Ok(Nil) = kv.remember(workspace_conn, "test_key", "test_value")
 
     // Reset session
-    let assert Ok(new_sess) = session.reset(test_config(provider), sess)
+    let assert Ok(new_sess) =
+      session.reset(test_config(provider), sess, global_conn)
 
     // Workspace data should still be there
     let assert Ok(val) = kv.recall(workspace_conn, "test_key")
@@ -231,7 +251,7 @@ pub fn reset_session_preserves_workspace_test() {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// Load session (history seeding from DB)
+// Load session (history seeding from conversations table)
 // ═══════════════════════════════════════════════════════════════
 
 pub fn load_session_creates_agent_with_history_test() {
@@ -249,7 +269,7 @@ pub fn load_session_creates_agent_with_history_test() {
     let assert Ok(_) = session.run_prompt(sess, "Hello there")
     session.stop(sess)
 
-    // Load the session — should recreate with history
+    // Load the session — should recreate with history from conversation
     let assert Ok(loaded) =
       session.load(
         test_config(provider),
@@ -258,8 +278,8 @@ pub fn load_session_creates_agent_with_history_test() {
         "test_user",
       )
 
-    // Same session ID since the session is still active in DB
-    let assert True = sess.session_id == loaded.session_id
+    // Same conversation ID since the conversation persists in DB
+    let assert True = sess.conversation_id == loaded.conversation_id
 
     session.stop(loaded)
   })
@@ -278,8 +298,8 @@ pub fn load_session_no_existing_session_creates_fresh_test() {
         "new_user:999",
       )
 
-    // Should have created a new session
-    let assert True = string.length(sess.session_id) > 0
+    // Should have created a new conversation
+    let assert True = string.length(sess.conversation_id) > 0
 
     session.stop(sess)
   })

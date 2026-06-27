@@ -1,28 +1,23 @@
 //// Run tracking tests — verify chute_exec records runs in global DB.
 
 import ballast/value
+import gabsurd/client
 import gleam/list
 import gleeunit
-import gabsurd/client
 import hermes_agent/chute_exec
 import pig/workspace/schema
 import sqlight
-import yard/db
 import testing
-
+import yard/db
 
 pub fn main() {
   gleeunit.main()
 }
 
-fn with_both_dbs(
-  test_fn: fn(sqlight.Connection, client.Db) -> a,
-) -> a {
+fn with_both_dbs(test_fn: fn(sqlight.Connection, client.Db) -> a) -> a {
   let assert Ok(workspace_conn) = sqlight.open("file::memory:")
   let assert Ok(Nil) = schema.init(workspace_conn)
-  testing.with_clean_db(fn(global_conn) {
-    test_fn(workspace_conn, global_conn)
-  })
+  testing.with_clean_db(fn(global_conn) { test_fn(workspace_conn, global_conn) })
 }
 
 pub fn successful_run_recorded_test() {

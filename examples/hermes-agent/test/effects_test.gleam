@@ -1,4 +1,6 @@
 import ballast/value.{ErrorVal, ListVal, NilVal, OkVal, RecordVal, StringVal}
+import gabsurd/client
+import gabsurd/queue
 import gleam/dict
 import gleam/erlang/process
 import gleam/int
@@ -11,9 +13,6 @@ import sqlight
 import testing
 import yard/pg_cron
 import yard/skill_repo
-import gabsurd/client
-import gabsurd/queue
-
 
 pub fn main() {
   gleeunit.main()
@@ -29,14 +28,10 @@ fn with_workspace(test_fn: fn(sqlight.Connection) -> a) -> a {
   test_fn(conn)
 }
 
-fn with_both_dbs(
-  test_fn: fn(sqlight.Connection, client.Db) -> a,
-) -> a {
+fn with_both_dbs(test_fn: fn(sqlight.Connection, client.Db) -> a) -> a {
   let assert Ok(workspace_conn) = sqlight.open("file::memory:")
   let assert Ok(Nil) = schema.init(workspace_conn)
-  testing.with_clean_db(fn(global_conn) {
-    test_fn(workspace_conn, global_conn)
-  })
+  testing.with_clean_db(fn(global_conn) { test_fn(workspace_conn, global_conn) })
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -391,7 +386,10 @@ fn with_pg_db(test_fn: fn(client.Db, String) -> a) -> a {
       case pg_cron.list_jobs(db) {
         Ok(jobs) ->
           list.each(jobs, fn(j) {
-            case string.starts_with(j.job_name, "hermes_") && !list.contains(pre_existing, j.job_name) {
+            case
+              string.starts_with(j.job_name, "hermes_")
+              && !list.contains(pre_existing, j.job_name)
+            {
               True -> {
                 let _ = pg_cron.unschedule(db, job_name: j.job_name)
                 Nil
@@ -419,7 +417,8 @@ pub fn schedule_cron_handler_test() {
     Ok(#(_, check_pid)) -> {
       with_both_dbs(fn(_workspace_conn, global_conn) {
         with_pg_db(fn(pg_db, queue_name) {
-          let handler = effects.schedule_cron_handler(pg_db, queue_name, global_conn)
+          let handler =
+            effects.schedule_cron_handler(pg_db, queue_name, global_conn)
 
           // First register a skill so we can schedule it
           let _ =
@@ -432,7 +431,10 @@ pub fn schedule_cron_handler_test() {
             )
 
           let result =
-            handler("schedule_cron", [StringVal("0 * * * *"), StringVal("cron-skill")])
+            handler("schedule_cron", [
+              StringVal("0 * * * *"),
+              StringVal("cron-skill"),
+            ])
           let assert Ok(OkVal(StringVal(job_name))) = result
           let assert True = string.length(job_name) > 0
           let assert True = string.starts_with(job_name, "hermes_")
@@ -447,7 +449,8 @@ pub fn schedule_cron_handler_test() {
       process.send_exit(check_pid)
       Nil
     }
-    Error(_) -> Nil // Skip gracefully if gabsurd not available
+    Error(_) -> Nil
+    // Skip gracefully if gabsurd not available
   }
 }
 
@@ -457,7 +460,8 @@ pub fn schedule_cron_bad_args_test() {
     Ok(#(_, check_pid)) -> {
       with_both_dbs(fn(_workspace_conn, global_conn) {
         with_pg_db(fn(pg_db, queue_name) {
-          let handler = effects.schedule_cron_handler(pg_db, queue_name, global_conn)
+          let handler =
+            effects.schedule_cron_handler(pg_db, queue_name, global_conn)
 
           let result = handler("schedule_cron", [StringVal("only one")])
           let assert Ok(ErrorVal(StringVal(msg))) = result
@@ -467,7 +471,8 @@ pub fn schedule_cron_bad_args_test() {
       process.send_exit(check_pid)
       Nil
     }
-    Error(_) -> Nil // Skip gracefully
+    Error(_) -> Nil
+    // Skip gracefully
   }
 }
 
@@ -494,7 +499,8 @@ pub fn list_crons_handler_empty_test() {
       process.send_exit(check_pid)
       Nil
     }
-    Error(_) -> Nil // Skip gracefully
+    Error(_) -> Nil
+    // Skip gracefully
   }
 }
 
@@ -504,7 +510,8 @@ pub fn cancel_cron_handler_test() {
     Ok(#(_, check_pid)) -> {
       with_both_dbs(fn(_workspace_conn, global_conn) {
         with_pg_db(fn(pg_db, queue_name) {
-          let schedule_handler = effects.schedule_cron_handler(pg_db, queue_name, global_conn)
+          let schedule_handler =
+            effects.schedule_cron_handler(pg_db, queue_name, global_conn)
           let cancel_handler = effects.cancel_cron_handler(pg_db)
           let list_handler = effects.list_crons_handler(pg_db)
 
@@ -524,7 +531,8 @@ pub fn cancel_cron_handler_test() {
             ])
 
           // Cancel it
-          let cancel_result = cancel_handler("cancel_cron", [StringVal(job_name)])
+          let cancel_result =
+            cancel_handler("cancel_cron", [StringVal(job_name)])
           let assert Ok(OkVal(NilVal)) = cancel_result
 
           // Verify it's gone from list
@@ -536,7 +544,8 @@ pub fn cancel_cron_handler_test() {
       process.send_exit(check_pid)
       Nil
     }
-    Error(_) -> Nil // Skip gracefully
+    Error(_) -> Nil
+    // Skip gracefully
   }
 }
 
@@ -567,6 +576,7 @@ pub fn all_handlers_with_cron_has_16_keys_test() {
       process.send_exit(check_pid)
       Nil
     }
-    Error(_) -> Nil // Skip gracefully
+    Error(_) -> Nil
+    // Skip gracefully
   }
 }

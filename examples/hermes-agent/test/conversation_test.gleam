@@ -75,7 +75,14 @@ fn with_workspace(test_fn: fn(sqlight.Connection) -> a) -> a {
 /// A fake provider that always returns a text response (no tool calls).
 fn text_provider(text: String) -> provider.Provider {
   fn(_messages, _tools) {
-    Ok(provider.from_message(message.Assistant(text, [], option.None, option.None)))
+    Ok(
+      provider.from_message(message.Assistant(
+        text,
+        [],
+        option.None,
+        option.None,
+      )),
+    )
   }
 }
 
@@ -149,7 +156,12 @@ pub fn single_turn_with_tool_call_test() {
             )
           _ ->
             Ok(
-              provider.from_message(message.Assistant("Done", [], option.None, option.None)),
+              provider.from_message(message.Assistant(
+                "Done",
+                [],
+                option.None,
+                option.None,
+              )),
             )
         }
       })
@@ -186,7 +198,14 @@ pub fn multi_turn_preserves_history_test() {
           0 -> "Turn 1: I see you said something."
           _ -> "Turn 2: Continuing conversation."
         }
-        Ok(provider.from_message(message.Assistant(text, [], option.None, option.None)))
+        Ok(
+          provider.from_message(message.Assistant(
+            text,
+            [],
+            option.None,
+            option.None,
+          )),
+        )
       })
       |> pig.with_system_prompt("You are a test agent.")
       |> pig.with_tool(chute_tool)
@@ -265,7 +284,12 @@ pub fn multi_turn_with_tools_across_turns_test() {
             )
           _ ->
             Ok(
-              provider.from_message(message.Assistant("Done", [], option.None, option.None)),
+              provider.from_message(message.Assistant(
+                "Done",
+                [],
+                option.None,
+                option.None,
+              )),
             )
         }
       })
@@ -347,7 +371,12 @@ pub fn kv_persists_across_turns_test() {
             )
           _ ->
             Ok(
-              provider.from_message(message.Assistant("Done", [], option.None, option.None)),
+              provider.from_message(message.Assistant(
+                "Done",
+                [],
+                option.None,
+                option.None,
+              )),
             )
         }
       })
@@ -427,7 +456,12 @@ pub fn error_recovery_across_turns_test() {
             )
           _ ->
             Ok(
-              provider.from_message(message.Assistant("Done", [], option.None, option.None)),
+              provider.from_message(message.Assistant(
+                "Done",
+                [],
+                option.None,
+                option.None,
+              )),
             )
         }
       })

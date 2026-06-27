@@ -80,15 +80,12 @@ pub fn encode(v: Value) -> json.Json {
         #("type", json.string("record")),
         #(
           "fields",
-          json.array(
-            from: fields,
-            of: fn(f) {
-              json.object([
-                #("name", json.string(f.0)),
-                #("value", encode(f.1)),
-              ])
-            },
-          ),
+          json.array(from: fields, of: fn(f) {
+            json.object([
+              #("name", json.string(f.0)),
+              #("value", encode(f.1)),
+            ])
+          }),
         ),
       ])
     ClosureVal(..) -> json.object([#("type", json.string("closure"))])

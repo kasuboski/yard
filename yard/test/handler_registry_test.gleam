@@ -10,17 +10,17 @@
 //// invocation), but generalized through a registry instead of hardcoded.
 
 import ballast/value
+import gabsurd/client
 import gleam/dict
 import gleam/list
 import gleam/option
 import gleam/string
 import gleeunit
-import gabsurd/client
 import sqlight
+import testing
 import yard/db
 import yard/handler_registry
 import yard/runner
-import testing
 
 pub fn main() {
   gleeunit.main()
@@ -70,10 +70,11 @@ fn workspace_probe_builder(
 pub fn new_registry_is_empty_test() {
   let reg = handler_registry.new()
   let assert Error(Nil) =
-    handler_registry.resolve_one(reg, "nonexistent", handler_registry.make_context(
-      option.None,
-      fn(_) { Nil },
-    ))
+    handler_registry.resolve_one(
+      reg,
+      "nonexistent",
+      handler_registry.make_context(option.None, fn(_) { Nil }),
+    )
 }
 
 pub fn resolve_one_returns_handler_test() {
@@ -119,12 +120,12 @@ pub fn handler_receives_context_with_workspace_test() {
     )
   // Create a real SQLite connection for workspace
   let assert Ok(ws_conn) = sqlight.open("file::memory:")
-  let ctx =
-    handler_registry.make_context(option.Some(ws_conn), fn(_) { Nil })
+  let ctx = handler_registry.make_context(option.Some(ws_conn), fn(_) { Nil })
   let assert Ok(handler) =
     handler_registry.resolve_one(reg, "workspace_probe", ctx)
 
-  let assert Ok(value.OkVal(value.StringVal("has_workspace"))) = handler("x", [])
+  let assert Ok(value.OkVal(value.StringVal("has_workspace"))) =
+    handler("x", [])
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -139,8 +140,7 @@ pub fn resolve_for_agent_loads_bindings_from_db_test() {
     // Create an agent with handler bindings
     let assert Ok(agent_id) =
       db.insert_agent(db, "test_agent", "test", "source", "active")
-    let assert Ok(Nil) =
-      db.insert_agent_handler(db, agent_id, "echo", "echo")
+    let assert Ok(Nil) = db.insert_agent_handler(db, agent_id, "echo", "echo")
 
     let ctx = handler_registry.make_context(option.None, fn(_) { Nil })
     let assert Ok(handlers) =
@@ -160,10 +160,8 @@ pub fn resolve_for_agent_multiple_bindings_test() {
 
     let assert Ok(agent_id) =
       db.insert_agent(db, "test_agent", "test", "source", "active")
-    let assert Ok(Nil) =
-      db.insert_agent_handler(db, agent_id, "echo", "echo")
-    let assert Ok(Nil) =
-      db.insert_agent_handler(db, agent_id, "greet", "echo")
+    let assert Ok(Nil) = db.insert_agent_handler(db, agent_id, "echo", "echo")
+    let assert Ok(Nil) = db.insert_agent_handler(db, agent_id, "greet", "echo")
 
     let ctx = handler_registry.make_context(option.None, fn(_) { Nil })
     let assert Ok(handlers) =

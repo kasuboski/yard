@@ -11,6 +11,7 @@
 ////
 //// NOTE: migrate() is a no-op now - schema is applied via bin/postgres.sh
 
+import gabsurd/client.{type Db, type GabsurdError, NotFound}
 import gleam/dynamic/decode as dyn_decode
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -18,7 +19,6 @@ import gleam/string
 import gluid
 import logging
 import parrot/dev
-import gabsurd/client.{type Db, type GabsurdError, NotFound}
 
 // ═══════════════════════════════════════════════════════════════
 // Public Types (matching original schema.sql structure)
@@ -120,7 +120,10 @@ pub fn get_provider(db: Db) -> Result(Option(Provider), Nil) {
     Ok([]) -> Ok(None)
     Ok(_) -> Ok(None)
     Error(e) -> {
-      logging.log(logging.Error, "db.get_provider failed: " <> error_to_string(e))
+      logging.log(
+        logging.Error,
+        "db.get_provider failed: " <> error_to_string(e),
+      )
       Error(Nil)
     }
   }
@@ -142,11 +145,16 @@ pub fn save_provider(
         base_url = EXCLUDED.base_url,
         model = EXCLUDED.model
     "
-  case client.exec(db, #(sql, [
-    dev.ParamString(api_key),
-    dev.ParamString(base_url),
-    dev.ParamString(model),
-  ])) {
+  case
+    client.exec(
+      db,
+      #(sql, [
+        dev.ParamString(api_key),
+        dev.ParamString(base_url),
+        dev.ParamString(model),
+      ]),
+    )
+  {
     Ok(_) -> Ok(Provider("default", api_key, base_url, model))
     Error(e) -> {
       logging.log(
@@ -198,7 +206,10 @@ pub fn list_agents(db: Db) -> Result(List(ListAgents), Nil) {
   case client.query_many(db, #(sql, [], list_agents_decoder())) {
     Ok(agents) -> Ok(agents)
     Error(e) -> {
-      logging.log(logging.Error, "db.list_agents failed: " <> error_to_string(e))
+      logging.log(
+        logging.Error,
+        "db.list_agents failed: " <> error_to_string(e),
+      )
       Error(Nil)
     }
   }
@@ -236,7 +247,10 @@ pub fn get_agent_by_name(db: Db, name: String) -> Result(Option(Agent), Nil) {
     Ok([]) -> Ok(None)
     Ok(_) -> Ok(None)
     Error(e) -> {
-      logging.log(logging.Error, "db.get_agent_by_name failed: " <> error_to_string(e))
+      logging.log(
+        logging.Error,
+        "db.get_agent_by_name failed: " <> error_to_string(e),
+      )
       Error(Nil)
     }
   }
@@ -258,17 +272,25 @@ pub fn insert_agent(
     INSERT INTO agents (id, name, description, chute_source, actor_hash, status)
     VALUES ($1, $2, $3, $4, $5, $6)
     "
-  case client.exec(db, #(sql, [
-    dev.ParamString(id),
-    dev.ParamString(name),
-    dev.ParamString(description),
-    dev.ParamString(chute_source),
-    dev.ParamString(hash),
-    dev.ParamString(status),
-  ])) {
+  case
+    client.exec(
+      db,
+      #(sql, [
+        dev.ParamString(id),
+        dev.ParamString(name),
+        dev.ParamString(description),
+        dev.ParamString(chute_source),
+        dev.ParamString(hash),
+        dev.ParamString(status),
+      ]),
+    )
+  {
     Ok(_) -> Ok(id)
     Error(e) -> {
-      logging.log(logging.Error, "db.insert_agent failed: " <> error_to_string(e))
+      logging.log(
+        logging.Error,
+        "db.insert_agent failed: " <> error_to_string(e),
+      )
       Error(Nil)
     }
   }
@@ -293,7 +315,10 @@ pub fn get_agent_handlers(
   case client.query_many(db, #(sql, [dev.ParamString(agent_id)], decoder)) {
     Ok(handlers) -> Ok(handlers)
     Error(e) -> {
-      logging.log(logging.Error, "db.get_agent_handlers failed: " <> error_to_string(e))
+      logging.log(
+        logging.Error,
+        "db.get_agent_handlers failed: " <> error_to_string(e),
+      )
       Error(Nil)
     }
   }
@@ -312,15 +337,23 @@ pub fn insert_agent_handler(
     INSERT INTO agent_handlers (id, agent_id, effect_name, handler_name)
     VALUES ($1, $2, $3, $4)
     "
-  case client.exec(db, #(sql, [
-    dev.ParamString(id),
-    dev.ParamString(agent_id),
-    dev.ParamString(effect_name),
-    dev.ParamString(handler_name),
-  ])) {
+  case
+    client.exec(
+      db,
+      #(sql, [
+        dev.ParamString(id),
+        dev.ParamString(agent_id),
+        dev.ParamString(effect_name),
+        dev.ParamString(handler_name),
+      ]),
+    )
+  {
     Ok(_) -> Ok(Nil)
     Error(e) -> {
-      logging.log(logging.Error, "db.insert_agent_handler failed: " <> error_to_string(e))
+      logging.log(
+        logging.Error,
+        "db.insert_agent_handler failed: " <> error_to_string(e),
+      )
       Error(Nil)
     }
   }
@@ -364,7 +397,10 @@ pub fn list_skills(db: Db) -> Result(List(Skill), Nil) {
   case client.query_many(db, #(sql, [], list_skills_decoder())) {
     Ok(skills) -> Ok(skills)
     Error(e) -> {
-      logging.log(logging.Error, "db.list_skills failed: " <> error_to_string(e))
+      logging.log(
+        logging.Error,
+        "db.list_skills failed: " <> error_to_string(e),
+      )
       Error(Nil)
     }
   }
@@ -402,7 +438,10 @@ pub fn get_skill_by_name(db: Db, name: String) -> Result(Option(Skill), Nil) {
     Ok([]) -> Ok(None)
     Ok(_) -> Ok(None)
     Error(e) -> {
-      logging.log(logging.Error, "db.get_skill_by_name failed: " <> error_to_string(e))
+      logging.log(
+        logging.Error,
+        "db.get_skill_by_name failed: " <> error_to_string(e),
+      )
       Error(Nil)
     }
   }
@@ -423,16 +462,24 @@ pub fn insert_skill(
     INSERT INTO skills (id, name, description, chute_source, tags, status)
     VALUES ($1, $2, $3, $4, $5, 'active')
     "
-  case client.exec(db, #(sql, [
-    dev.ParamString(id),
-    dev.ParamString(name),
-    dev.ParamString(description),
-    dev.ParamString(chute_source),
-    dev.ParamString(tags),
-  ])) {
+  case
+    client.exec(
+      db,
+      #(sql, [
+        dev.ParamString(id),
+        dev.ParamString(name),
+        dev.ParamString(description),
+        dev.ParamString(chute_source),
+        dev.ParamString(tags),
+      ]),
+    )
+  {
     Ok(_) -> Ok(id)
     Error(e) -> {
-      logging.log(logging.Error, "db.insert_skill failed: " <> error_to_string(e))
+      logging.log(
+        logging.Error,
+        "db.insert_skill failed: " <> error_to_string(e),
+      )
       Error(Nil)
     }
   }
@@ -452,15 +499,23 @@ pub fn update_skill(
     SET description = $1, chute_source = $2, tags = $3, updated_at = now()
     WHERE id = $4
     "
-  case client.exec(db, #(sql, [
-    dev.ParamString(description),
-    dev.ParamString(chute_source),
-    dev.ParamString(tags),
-    dev.ParamString(id),
-  ])) {
+  case
+    client.exec(
+      db,
+      #(sql, [
+        dev.ParamString(description),
+        dev.ParamString(chute_source),
+        dev.ParamString(tags),
+        dev.ParamString(id),
+      ]),
+    )
+  {
     Ok(_) -> Ok(Nil)
     Error(e) -> {
-      logging.log(logging.Error, "db.update_skill failed: " <> error_to_string(e))
+      logging.log(
+        logging.Error,
+        "db.update_skill failed: " <> error_to_string(e),
+      )
       Error(Nil)
     }
   }
@@ -477,7 +532,10 @@ pub fn deactivate_skill(db: Db, id: String) -> Result(Nil, Nil) {
   case client.exec(db, #(sql, [dev.ParamString(id)])) {
     Ok(_) -> Ok(Nil)
     Error(e) -> {
-      logging.log(logging.Error, "db.deactivate_skill failed: " <> error_to_string(e))
+      logging.log(
+        logging.Error,
+        "db.deactivate_skill failed: " <> error_to_string(e),
+      )
       Error(Nil)
     }
   }
@@ -516,19 +574,32 @@ pub fn get_actor_runs(
     use result <- dyn_decode.field(4, dyn_decode.string)
     use duration_ms <- dyn_decode.field(5, dyn_decode.int)
     use started_at <- dyn_decode.field(6, dyn_decode.int)
-    dyn_decode.success(
-      Run(
-        id:, status:, trigger_type:, trigger_source:, result:, duration_ms:, started_at:,
-      )
-    )
+    dyn_decode.success(Run(
+      id:,
+      status:,
+      trigger_type:,
+      trigger_source:,
+      result:,
+      duration_ms:,
+      started_at:,
+    ))
   }
-  case client.query_many(db, #(sql, [
-    dev.ParamString(agent_id),
-    dev.ParamInt(limit),
-  ], decoder)) {
+  case
+    client.query_many(db, #(
+      sql,
+      [
+        dev.ParamString(agent_id),
+        dev.ParamInt(limit),
+      ],
+      decoder,
+    ))
+  {
     Ok(runs) -> Ok(runs)
     Error(e) -> {
-      logging.log(logging.Error, "db.get_actor_runs failed: " <> error_to_string(e))
+      logging.log(
+        logging.Error,
+        "db.get_actor_runs failed: " <> error_to_string(e),
+      )
       Error(Nil)
     }
   }
@@ -594,18 +665,23 @@ fn do_insert_run(
     INSERT INTO runs (id, agent_id, deployment_id, trigger_type, trigger_source, status, started_at)
     VALUES ($1, $2, $3, $4, $5, $6, to_timestamp($7 / 1000.0))
     "
-  case client.exec(db, #(sql, [
-    dev.ParamString(id),
-    dev.ParamString(agent_id),
-    dev.ParamNullable(case deployment_id {
-      Some(d) -> Some(dev.ParamString(d))
-      None -> None
-    }),
-    dev.ParamString(trigger_type),
-    dev.ParamString(trigger_source),
-    dev.ParamString(status),
-    dev.ParamInt(started_at),
-  ])) {
+  case
+    client.exec(
+      db,
+      #(sql, [
+        dev.ParamString(id),
+        dev.ParamString(agent_id),
+        dev.ParamNullable(case deployment_id {
+          Some(d) -> Some(dev.ParamString(d))
+          None -> None
+        }),
+        dev.ParamString(trigger_type),
+        dev.ParamString(trigger_source),
+        dev.ParamString(status),
+        dev.ParamInt(started_at),
+      ]),
+    )
+  {
     Ok(_) -> Ok(Nil)
     Error(e) -> {
       logging.log(logging.Error, "db.insert_run failed: " <> error_to_string(e))
@@ -634,29 +710,37 @@ pub fn complete_run(
         completed_at = to_timestamp($5 / 1000.0)
     WHERE id = $6
     "
-  case client.exec(db, #(sql, [
-    dev.ParamString(status),
-    dev.ParamNullable(case result {
-      Some(r) -> Some(dev.ParamString(r))
-      None -> None
-    }),
-    dev.ParamNullable(case gas_used {
-      Some(g) -> Some(dev.ParamInt(g))
-      None -> None
-    }),
-    dev.ParamNullable(case duration_ms {
-      Some(d) -> Some(dev.ParamInt(d))
-      None -> None
-    }),
-    dev.ParamNullable(case completed_at {
-      Some(c) -> Some(dev.ParamInt(c))
-      None -> None
-    }),
-    dev.ParamString(id),
-  ])) {
+  case
+    client.exec(
+      db,
+      #(sql, [
+        dev.ParamString(status),
+        dev.ParamNullable(case result {
+          Some(r) -> Some(dev.ParamString(r))
+          None -> None
+        }),
+        dev.ParamNullable(case gas_used {
+          Some(g) -> Some(dev.ParamInt(g))
+          None -> None
+        }),
+        dev.ParamNullable(case duration_ms {
+          Some(d) -> Some(dev.ParamInt(d))
+          None -> None
+        }),
+        dev.ParamNullable(case completed_at {
+          Some(c) -> Some(dev.ParamInt(c))
+          None -> None
+        }),
+        dev.ParamString(id),
+      ]),
+    )
+  {
     Ok(_) -> Ok(Nil)
     Error(e) -> {
-      logging.log(logging.Error, "db.complete_run failed: " <> error_to_string(e))
+      logging.log(
+        logging.Error,
+        "db.complete_run failed: " <> error_to_string(e),
+      )
       Error(Nil)
     }
   }
@@ -692,7 +776,13 @@ pub fn get_or_create_session_for_user(
     WHERE user_key = $1 AND status = 'active'
     LIMIT 1
     "
-  case client.query_many(db, #(sql, [dev.ParamString(user_key)], session_id_decoder())) {
+  case
+    client.query_many(db, #(
+      sql,
+      [dev.ParamString(user_key)],
+      session_id_decoder(),
+    ))
+  {
     Ok([session_id]) -> Ok(session_id)
     Ok([]) -> {
       // Create new session
@@ -702,20 +792,32 @@ pub fn get_or_create_session_for_user(
         INSERT INTO chat_sessions (id, user_key, status)
         VALUES ($1, $2, 'active')
         "
-      case client.exec(db, #(ins_sql, [
-        dev.ParamString(id),
-        dev.ParamString(user_key),
-      ])) {
+      case
+        client.exec(
+          db,
+          #(ins_sql, [
+            dev.ParamString(id),
+            dev.ParamString(user_key),
+          ]),
+        )
+      {
         Ok(_) -> Ok(id)
         Error(e) -> {
-          logging.log(logging.Error, "db.get_or_create_session_for_user insert failed: " <> error_to_string(e))
+          logging.log(
+            logging.Error,
+            "db.get_or_create_session_for_user insert failed: "
+              <> error_to_string(e),
+          )
           Error(Nil)
         }
       }
     }
     Ok(_) -> Ok("")
     Error(e) -> {
-      logging.log(logging.Error, "db.get_or_create_session_for_user failed: " <> error_to_string(e))
+      logging.log(
+        logging.Error,
+        "db.get_or_create_session_for_user failed: " <> error_to_string(e),
+      )
       Error(Nil)
     }
   }
@@ -732,7 +834,10 @@ pub fn complete_session(db: Db, session_id: String) -> Result(Nil, Nil) {
   case client.exec(db, #(sql, [dev.ParamString(session_id)])) {
     Ok(_) -> Ok(Nil)
     Error(e) -> {
-      logging.log(logging.Error, "db.complete_session failed: " <> error_to_string(e))
+      logging.log(
+        logging.Error,
+        "db.complete_session failed: " <> error_to_string(e),
+      )
       Error(Nil)
     }
   }
@@ -754,17 +859,26 @@ pub fn get_recent_messages(
     ORDER BY created_at DESC
     LIMIT $2
     "
-  case client.query_many(db, #(sql, [
-    dev.ParamString(session_id),
-    dev.ParamInt(limit),
-  ], chat_message_decoder())) {
+  case
+    client.query_many(db, #(
+      sql,
+      [
+        dev.ParamString(session_id),
+        dev.ParamInt(limit),
+      ],
+      chat_message_decoder(),
+    ))
+  {
     Ok(rows) -> {
       // Query returns DESC order, reverse to get chronological ASC
       let rows = list.reverse(rows)
       Ok(rows)
     }
     Error(e) -> {
-      logging.log(logging.Error, "db.get_recent_messages failed: " <> error_to_string(e))
+      logging.log(
+        logging.Error,
+        "db.get_recent_messages failed: " <> error_to_string(e),
+      )
       Error(Nil)
     }
   }
@@ -793,14 +907,20 @@ pub fn get_or_create_session(db: Db) -> Result(String, Nil) {
       case client.exec(db, #(ins_sql, [dev.ParamString(id)])) {
         Ok(_) -> Ok(id)
         Error(e) -> {
-          logging.log(logging.Error, "db.get_or_create_session insert failed: " <> error_to_string(e))
+          logging.log(
+            logging.Error,
+            "db.get_or_create_session insert failed: " <> error_to_string(e),
+          )
           Error(Nil)
         }
       }
     }
     Ok(_) -> Ok("")
     Error(e) -> {
-      logging.log(logging.Error, "db.get_or_create_session failed: " <> error_to_string(e))
+      logging.log(
+        logging.Error,
+        "db.get_or_create_session failed: " <> error_to_string(e),
+      )
       Error(Nil)
     }
   }
@@ -819,15 +939,23 @@ pub fn save_chat_message(
     INSERT INTO chat_messages (id, session_id, role, content)
     VALUES ($1, $2, $3, $4)
     "
-  case client.exec(db, #(sql, [
-    dev.ParamString(id),
-    dev.ParamString(session_id),
-    dev.ParamString(role),
-    dev.ParamString(content),
-  ])) {
+  case
+    client.exec(
+      db,
+      #(sql, [
+        dev.ParamString(id),
+        dev.ParamString(session_id),
+        dev.ParamString(role),
+        dev.ParamString(content),
+      ]),
+    )
+  {
     Ok(_) -> Ok(Nil)
     Error(e) -> {
-      logging.log(logging.Error, "db.save_chat_message failed: " <> error_to_string(e))
+      logging.log(
+        logging.Error,
+        "db.save_chat_message failed: " <> error_to_string(e),
+      )
       Error(Nil)
     }
   }
@@ -845,10 +973,19 @@ pub fn get_chat_messages(
     WHERE session_id = $1
     ORDER BY created_at ASC
     "
-  case client.query_many(db, #(sql, [dev.ParamString(session_id)], chat_message_decoder())) {
+  case
+    client.query_many(db, #(
+      sql,
+      [dev.ParamString(session_id)],
+      chat_message_decoder(),
+    ))
+  {
     Ok(messages) -> Ok(messages)
     Error(e) -> {
-      logging.log(logging.Error, "db.get_chat_messages failed: " <> error_to_string(e))
+      logging.log(
+        logging.Error,
+        "db.get_chat_messages failed: " <> error_to_string(e),
+      )
       Error(Nil)
     }
   }

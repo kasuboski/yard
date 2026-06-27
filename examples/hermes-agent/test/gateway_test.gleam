@@ -8,6 +8,7 @@
 //// So the session key is "123456789:987654321"
 //// and user_key_from_key extracts "telegram:987654321".
 
+import gabsurd/client
 import gleam/int
 import gleam/list
 import gleam/option
@@ -18,12 +19,12 @@ import hermes_agent/session
 import pig/ai/message
 import pig/ai/provider
 import pig/workspace
-import gabsurd/client
 import telega/router
 import telega/testing/conversation
-import yard/db
 import testing
-
+import yard/agent_checkpoint
+import yard/conversation as yard_conv
+import yard/pg_conversation
 
 pub fn main() {
   gleeunit.main()
@@ -47,14 +48,19 @@ fn echo_provider() -> provider.Provider {
           )),
         )
       _ ->
-        Ok(provider.from_message(message.Assistant("Hello!", [], option.None, option.None)))
+        Ok(
+          provider.from_message(message.Assistant(
+            "Hello!",
+            [],
+            option.None,
+            option.None,
+          )),
+        )
     }
   }
 }
 
-fn with_gateway(
-  test_fn: fn(gateway.GatewayConfig, client.Db) -> a,
-) -> a {
+fn with_gateway(test_fn: fn(gateway.GatewayConfig, client.Db) -> a) -> a {
   testing.with_clean_db(fn(global_conn) {
     testing.clean_registry(global_conn)
     let assert Ok(ws) = workspace.open("file::memory:")
@@ -169,11 +175,13 @@ pub fn session_persistence_round_trip_test() {
         test_user_key(),
       )
     let assert Ok(_) = session.run_prompt(sess, "First message")
-    let session_id = sess.session_id
+    let conv_id = sess.conversation_id
     session.stop(sess)
 
-    // Verify messages were saved
-    let assert Ok(messages) = db.get_chat_messages(global_conn, session_id)
+    // Verify messages were saved to conversations table
+    let store = pg_conversation.from_db(db: config.global_conn)
+    let assert Ok(option.Some(json_str)) = yard_conv.load(store, conv_id)
+    let messages = agent_checkpoint.messages_from_json_string(json_str)
     let assert 2 = list.length(messages)
 
     // Now start a conversation with full session_settings.
@@ -191,7 +199,8 @@ pub fn session_persistence_round_trip_test() {
     )
 
     // Verify 4 messages total (2 from first session + 2 from loaded session)
-    let assert Ok(messages) = db.get_chat_messages(global_conn, session_id)
+    let assert Ok(option.Some(json_str)) = yard_conv.load(store, conv_id)
+    let messages = agent_checkpoint.messages_from_json_string(json_str)
     let assert 4 = list.length(messages)
   })
 }
@@ -217,16 +226,21 @@ pub fn first_message_creates_session_for_new_user_test() {
       settings,
     )
 
-    // Verify messages were saved to DB with correct user_key
+    // Verify messages were saved to conversations table
     let user_key = test_user_key()
-    let assert Ok(session_id) =
-      db.get_or_create_session_for_user(global_conn, user_key)
-    let assert Ok(messages) = db.get_chat_messages(global_conn, session_id)
+    let assert Ok(conv_id) =
+      pg_conversation.get_or_create_for_user(
+        db: global_conn,
+        agent_id: "hermes",
+        user_key:,
+      )
+    let store = pg_conversation.from_db(db: global_conn)
+    let assert Ok(option.Some(json_str)) = yard_conv.load(store, conv_id)
+    let messages = agent_checkpoint.messages_from_json_string(json_str)
     let assert 2 = list.length(messages)
     let assert [user_msg, assistant_msg] = messages
-    let assert "user" = user_msg.role
-    let assert "Hello new bot" = user_msg.content
-    let assert "assistant" = assistant_msg.role
-    let assert True = string.contains(assistant_msg.content, "Echo")
+    let assert message.User("Hello new bot") = user_msg
+    let assert message.Assistant(content:, ..) = assistant_msg
+    let assert True = string.contains(content, "Echo")
   })
 }

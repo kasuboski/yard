@@ -12,15 +12,15 @@
 ////   - save: wrap with `json.string(json_str)` (double-encodes as a JSON string)
 ////   - load: decode with `json.parse(cp.state, decode.string)` (recovers original)
 
-import gleam/dynamic/decode
-import gleam/json
-import gleam/option
 import gabsurd/checkpoint as gabsurd_cp
 import gabsurd/client.{
   type Db, type GabsurdError, ConnectionError, NotFound, QueryError,
   UnexpectedRowCount,
 }
 import gabsurd/context.{type Context}
+import gleam/dynamic/decode
+import gleam/json
+import gleam/option
 import yard/checkpoint.{type Checkpointer, CheckpointError}
 
 /// Create a Checkpointer from a gabsurd execution context.

@@ -1,30 +1,36 @@
-//// Agent turn handler — runs one Pig agent turn with full durability.
+//// Agent turn handler — runs one Pig agent turn with conversation persistence.
 ////
-//// From DURABLE.md Component 2 + Component 3.
-//// This is the handler for the "run-agent-turn" gabsurd task.
+//// This is the convergence point between yard's durability primitives and
+//// pig's own agent loop. Instead of reimplementing the provider call, entry
+//// point resolution, and tool execution (the old skeleton approach), this
+//// delegates entirely to pig:
 ////
-//// Each call:
-//// 1. Assembles history from conversation store + checkpoints
-//// 2. Determines entry point (CallLlm / Done / RunTools / etc.)
-//// 3. If retry with Done entry point: returns cached messages, no LLM call
-//// 4. If fresh/retry with CallLlm: creates Pig agent, runs one turn
-//// 5. Checkpoints new messages
-//// 6. Saves conversation to store on success
+////   1. Load conversation history from ConversationStore
+////   2. Build a pig agent seeded with that history
+////   3. Run the agent via pig.run() (normal turn) or pig.run_continue()
+////      (crash recovery — resume from checkpointed messages)
+////   4. Save the updated conversation back to the store
+////
+//// pig's `resume_from_history()` (agent/runtime.gleam) implements the full
+//// entry-point resolution: ToolUse → execute tools, Stop → return cached,
+//// Length/Error → re-call provider. We don't need to reimplement it.
 
-import pig/ai/error.{type AiError, ApiError, InvalidResponse, RateLimited, Timeout}
+import gleam/list
+import gleam/option
+import gleam/otp/actor.{type StartError}
+import gleam/result
+import logging
+import pig
+import pig/ai/error.{type AiError}
 import pig/ai/message.{type Message}
 import pig/ai/provider.{type Provider}
-import yard/agent_checkpoint.{CallLlm, Done}
-import yard/checkpoint.{type Checkpointer}
+import pig/tool
+import yard/agent_checkpoint
 import yard/conversation.{type ConversationStore}
-import yard/durable_turn
 
-/// Result of executing a durable agent turn.
+/// Result of executing an agent turn.
 pub type TurnResult {
-  TurnResult(
-    messages: List(Message),
-    final_message: Message,
-  )
+  TurnResult(messages: List(Message), final_message: Message)
 }
 
 /// Error from a turn execution.
@@ -32,116 +38,108 @@ pub type TurnError {
   TurnError(String)
 }
 
-/// Execute one durable agent turn.
+/// Execute one agent turn using pig with conversation persistence.
 ///
-/// This function ties together the conversation store, checkpoint store,
-/// and Pig's LLM provider. It handles both first-turn and retry scenarios.
+/// This ties together the ConversationStore (yard's persistence) with
+/// pig's agent loop. It:
+///
+/// 1. Loads conversation history from the store
+/// 2. Appends the user message
+/// 3. Builds a pig agent seeded with the full history
+/// 4. Runs the agent via `pig.run_continue()` — pig's resume logic
+///    detects the User message as the last entry and calls the provider
+/// 5. Saves the updated conversation (with the assistant response) back
 ///
 /// Parameters:
-/// - `conv_store`: PostgreSQL conversation store for multi-turn persistence
-/// - `cp_store`: Checkpoint store for per-task message durability
-/// - `conversation_id`: Unique ID for this conversation
-/// - `user_message`: The new user message for this turn
+/// - `conv_store`: Yard's conversation store (PostgreSQL-backed)
+/// - `conversation_id`: UUID for this conversation
+/// - `user_message`: The new user message
 /// - `provider`: LLM provider function
-/// - `tools`: Available tools for the agent
+/// - `tools`: Registered tools (chute_exec, etc.)
 /// - `system_prompt`: System prompt for the agent
+/// - `agent_name`: Agent identifier
 pub fn execute_turn(
   conv_store store: ConversationStore,
-  cp_store cp: Checkpointer,
   conversation_id conversation_id: String,
   user_message user_message: String,
   provider provider: Provider,
-  tools _tools: List(Nil),
-  system_prompt _system_prompt: String,
+  tools tools: List(tool.Tool),
+  system_prompt system_prompt: String,
+  agent_name agent_name: String,
+  run_timeout_ms run_timeout_ms: Int,
 ) -> Result(TurnResult, TurnError) {
-  // Assemble history (handles first-turn vs retry)
-  let assert Ok(durable_turn.AssembledHistory(
-    messages:,
-    entry_point:,
-    is_retry: _,
-  )) = durable_turn.assemble_history(
-    conv_store: store,
-    cp_store: cp,
-    conversation_id:,
-    user_message:,
+  // 1. Load conversation history from the store
+  use history_option <- result.try(
+    conversation.load(store, conversation_id)
+    |> result.map_error(fn(_) {
+      TurnError("failed to load conversation history")
+    }),
   )
 
-  // Determine what to do based on entry point
-  case entry_point {
-    Done -> {
-      // Retry completed: last message is Stop, return immediately
-      // No LLM call needed
-      let assert Ok(final) = gleam_list_last(messages)
-      save_conversation(store, conversation_id, messages)
-      Ok(TurnResult(messages:, final_message: final))
-    }
-
-    CallLlm -> {
-      // Need to call the LLM — either first turn or retry with pending messages
-      call_llm_and_checkpoint(provider, cp, store, conversation_id, messages)
-    }
-
-    _ -> {
-      // RunTools / Retry / Fail — for now, treat as needing an LLM call.
-      // In a full implementation, RunTools would execute tool calls here.
-      call_llm_and_checkpoint(provider, cp, store, conversation_id, messages)
-    }
+  let conv_history = case history_option {
+    option.Some(json_str) ->
+      agent_checkpoint.messages_from_json_string(json_str)
+    option.None -> []
   }
-}
 
-fn call_llm_and_checkpoint(
-  provider: Provider,
-  cp: Checkpointer,
-  store: ConversationStore,
-  conversation_id: String,
-  messages: List(Message),
-) -> Result(TurnResult, TurnError) {
-  // Call the provider with the assembled messages
-  case provider(messages, []) {
+  // 2. Append the user message
+  let messages = list.append(conv_history, [message.User(user_message)])
+
+  // 3. Build a pig agent seeded with the full history
+  let pig_config =
+    pig.new(provider)
+    |> pig.with_agent_name(agent_name)
+    |> pig.with_system_prompt(system_prompt)
+    |> pig.with_tools(tools)
+
+  let pig_config = pig.with_initial_history(pig_config, messages)
+
+  case pig.start(pig_config) {
     Error(e) ->
-      Error(TurnError(format_ai_error(e)))
-    Ok(result) -> {
-      // Checkpoint the LLM response
-      let response_idx = list.length(messages)
-      let _ = agent_checkpoint.save_message(cp, response_idx, result.message)
-
-      // Build the full message log
-      let full_messages = list.append(messages, [result.message])
-
-      // Save conversation to store
-      save_conversation(store, conversation_id, full_messages)
-
-      Ok(TurnResult(
-        messages: full_messages,
-        final_message: result.message,
-      ))
+      Error(TurnError("failed to start agent: " <> format_start_error(e)))
+    Ok(agent) -> {
+      // 4. Run the agent — pig.run_continue() detects the trailing User
+      //    message and calls the provider. On crash recovery, it detects
+      //    the last message type and resumes appropriately.
+      case pig.run_continue_with_timeout(agent, run_timeout_ms) {
+        Ok(final_message) -> {
+          // 5. Get the full message history (including intermediate tool calls/results)
+          let all_messages = pig.history(agent)
+          // 6. Save the updated conversation
+          let json_str = agent_checkpoint.messages_to_json_string(all_messages)
+          case conversation.save(store, conversation_id, json_str) {
+            Ok(_) -> Nil
+            Error(_) ->
+              logging.log(
+                logging.Error,
+                "agent_turn: failed to save conversation",
+              )
+          }
+          pig.stop(agent)
+          Ok(TurnResult(messages: all_messages, final_message:))
+        }
+        Error(e) -> {
+          pig.stop(agent)
+          Error(TurnError(format_ai_error(e)))
+        }
+      }
     }
   }
-}
-
-fn save_conversation(
-  store: ConversationStore,
-  conversation_id: String,
-  messages: List(Message),
-) -> Nil {
-  let json_str = agent_checkpoint.messages_to_json_string(messages)
-  let _ = conversation.save(store, conversation_id, json_str)
-  Nil
 }
 
 fn format_ai_error(e: AiError) -> String {
   case e {
-    ApiError(message:) -> "LLM API error: " <> message
-    RateLimited -> "LLM rate limited"
-    Timeout -> "LLM timeout"
-    InvalidResponse(detail:) -> "LLM invalid response: " <> detail
+    error.ApiError(message:) -> "LLM API error: " <> message
+    error.InvalidResponse(detail:) -> "invalid LLM response: " <> detail
+    error.RateLimited -> "rate limited"
+    error.Timeout -> "LLM call timed out"
   }
 }
 
-// ── Internal helpers ─────────────────────────────────────────────────
-
-import gleam/list
-
-fn gleam_list_last(lst: List(a)) -> Result(a, Nil) {
-  list.last(lst)
+fn format_start_error(e: StartError) -> String {
+  case e {
+    actor.InitTimeout -> "init timeout"
+    actor.InitFailed(msg) -> msg
+    actor.InitExited(_reason) -> "init exited"
+  }
 }

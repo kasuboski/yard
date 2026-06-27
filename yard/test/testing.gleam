@@ -7,8 +7,8 @@
 //// which does NOT close the pool — those tests spawn background workers
 //// that outlive the test function.
 
-import gleam/erlang/process
 import gabsurd/client.{type Db}
+import gleam/erlang/process
 
 const db_url = "postgresql://gabsurd:gabsurd@127.0.0.1:5432/gabsurd"
 
@@ -49,6 +49,12 @@ pub fn clean_registry(db: Db) -> Nil {
 /// Truncate durable tables (conversations, yard_events).
 pub fn clean_durable(db: Db) -> Nil {
   let _ =
-    client.exec(db, #("TRUNCATE TABLE yard_events, conversations RESTART IDENTITY CASCADE", []))
+    client.exec(
+      db,
+      #(
+        "TRUNCATE TABLE yard_events, conversations RESTART IDENTITY CASCADE",
+        [],
+      ),
+    )
   Nil
 }

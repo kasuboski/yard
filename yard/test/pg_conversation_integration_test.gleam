@@ -9,13 +9,12 @@ import gleam/dynamic/decode
 import gleam/json
 import gleam/option
 import gleam/string
-import gluid
 import gleeunit
 import gleeunit/should
+import gluid
+import testing
 import yard/conversation
 import yard/pg_conversation
-import testing
-
 
 pub fn main() {
   gleeunit.main()
