@@ -53,7 +53,10 @@ yard/src/
     └── obs/
         ├── events.gleam      # HostEvent type (5 variants, not 13)
         ├── dispatcher.gleam  # Shared OTP dispatcher
-        └── session.gleam     # JSONL writer consumer
+        ├── consumer_spec.gleam # ConsumerSpec — deferred consumer (spec + name + start_fn)
+        ├── session.gleam     # JSONL writer consumer
+        ├── terminal.gleam    # stdout printer consumer
+        └── pg_events.gleam   # PostgreSQL consumer → yard_events table (production default)
 ```
 
 ### The runner function
@@ -278,17 +281,21 @@ pub type HostEvent {
     depth: Int,
   )
 
-  /// A pig agent event, bridged from pig's dispatcher.
-  PigEvent(
+  /// An effect was replayed from a checkpoint (durable runner).
+  /// Emitted instead of EffectYielded + EffectHandled when a stored
+  /// checkpoint value is fed to Ballast on retry.
+  EffectReplayed(
     actor_path: String,
     actor_hash: String,
     run_id: String,
-    event: pig.obs.events.SessionEvent,
+    effect_name: String,
+    step: Int,
+    depth: Int,
   )
 }
 ```
 
-Five variants. That's it. Every effect, every trigger, every actor is covered. `trigger_type` and `effect_name` are data fields — adding new ones requires zero code changes.
+Five variants. That's it. Every effect, every trigger, every actor is covered. `trigger_type` and `effect_name` are data fields — adding new ones requires zero code changes. (`PigEvent` was an earlier design for bridging pig agent events into the host stream; it is not currently a `HostEvent` variant — see [The Pig Bridge](#the-pig-bridge).)
 
 ### Actor identity: `actor_path` vs `actor_hash`
 
@@ -450,11 +457,11 @@ One dispatcher process for the whole system. All runners emit to it. This is fin
          │  (fan out)      │
          └──┬──────┬───────┘
             │      │
-    ┌───────▼┐  ┌──▼──────────┐
-    │ Session │  │ Terminal    │    ← consumers (also OTP actors)
-    │ Writer  │  │ Printer     │
-    │(JSONL)  │  │ (stdout)    │
-    └─────────┘  └─────────────┘
+    ┌───────▼┐  ┌──▼──────────┐  ┌──▼──────────┐
+    │ Session │  │ Terminal    │  │ pg_events   │    ← consumers (also OTP actors)
+    │ Writer  │  │ Printer     │  │ → Postgres  │
+    │(JSONL)  │  │ (stdout)    │  │ yard_events │
+    └─────────┘  └─────────────┘  └─────────────┘
 ```
 
 If the dispatcher becomes a bottleneck (unlikely at normal webhook volumes), you can shard by `run_id` prefix. But BEAM message passing is fast — pig uses the same pattern for agent events.
@@ -463,7 +470,9 @@ If the dispatcher becomes a bottleneck (unlikely at normal webhook volumes), you
 
 ## The Pig Bridge
 
-When the `run_agent` handler starts a pig agent, it registers a forwarding consumer with pig's dispatcher. Pig events get wrapped in `PigEvent` with the host's `run_id` for correlation:
+> **Current state:** Yard no longer defines a `PigEvent` variant on `HostEvent`. Pig agents keep their own observability stack (pig's dispatcher + pig consumers), and yard observes the host side (`ActorStarted`/`EffectYielded`/`EffectHandled`/`ActorCompleted`) around the `run_agent` call. The forwarding pattern below is retained as design context for reconnecting the two streams; it is not wired up today.
+
+When the `run_agent` handler starts a pig agent, it can register a forwarding consumer with pig's dispatcher. Pig events would be wrapped with the host's `run_id` for correlation:
 
 ```gleam
 // Inside the run_agent effect handler:
@@ -551,8 +560,6 @@ Two actors running at the same time, events interleaved:
 {"ts":"10:23:01.355","run_id":"r_001","event":"effect_yielded","effect":"run_agent","depth":0}
 {"ts":"10:23:01.400","run_id":"r_002","event":"effect_handled","effect":"list_open_prs","result":"Ok(ListVal)","duration_ms":390,"depth":0}
 {"ts":"10:23:01.402","run_id":"r_002","event":"effect_yielded","effect":"run_agent","depth":0}
-{"ts":"10:23:01.353","run_id":"r_001","event":"pig_event","pig":{"event":"session_started","model":"claude-opus-4-7"}}
-{"ts":"10:23:01.410","run_id":"r_002","event":"pig_event","pig":{"event":"session_started","model":"claude-sonnet-4"}}
 {"ts":"10:23:04.520","run_id":"r_001","event":"effect_yielded","effect":"read_file","actor_hash":"5c9a1b3d","depth":1}
 {"ts":"10:23:04.528","run_id":"r_001","event":"effect_handled","effect":"read_file","actor_hash":"5c9a1b3d","result":"Ok(StringVal)","duration_ms":8,"depth":1}
 {"ts":"10:23:06.811","run_id":"r_001","event":"effect_handled","effect":"run_agent","result":"Ok(StringVal)","duration_ms":5459,"depth":0}
@@ -569,13 +576,14 @@ Filter by `run_id` to see a single actor's trace. Filter by `actor_hash` to see 
 
 ## Telemetry Projection
 
-Four event names cover everything:
+Five event names cover everything:
 
 ```
 yard.actor.started     [actor_path, actor_hash, trigger_type, trigger_source, run_id, gas, depth]
 yard.actor.completed   [actor_path, actor_hash, run_id, duration, gas_used, gas_limit, effects_performed]
 yard.effect.yielded    [actor_path, actor_hash, run_id, effect_name, depth]
 yard.effect.handled    [actor_path, actor_hash, run_id, effect_name, depth, duration]
+yard.effect.replayed   [actor_path, actor_hash, run_id, effect_name, step, depth]
 ```
 
 The `effect_name` and `trigger_type` are metadata, not part of the event name. Attach once, filter in your handler:
@@ -665,6 +673,52 @@ Or keep it simple — tests don't need to assert on events at all. The runner em
 
 ---
 
+## PostgreSQL Events Consumer (pg_events)
+
+The production replacement for the JSONL session writer. `obs/pg_events.gleam` is an OTP consumer that accepts `HostEvent`s directly (same interface as `obs/session.gleam` and `obs/terminal.gleam`) and writes each one to the `yard_events` table in PostgreSQL. Because every consumer receives the same `HostEvent`, registering it is a one-liner and needs no runner changes.
+
+**Schema** (in `yard/src/yard/sql/durable_schema.sql`):
+
+```sql
+CREATE TABLE IF NOT EXISTS yard_events (
+  id          BIGSERIAL PRIMARY KEY,
+  run_id      UUID NOT NULL,
+  event_type  TEXT NOT NULL,
+  payload     JSONB NOT NULL,
+  duration_ms INTEGER,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_yard_events_run_id ON yard_events(run_id);
+```
+
+`run_id` is JOINable with gabsurd's `absurd_runs` and `absurd_checkpoints` (a global FK isn't possible because the per-queue run table name is dynamic).
+
+**API** (`yard/obs/pg_events.gleam`):
+
+```gleam
+// Start an unsupervised consumer, get back the Subject to register
+pub fn start_consumer(db: Db) -> Result(Subject(HostEvent), StartError)
+
+// Or hand a ChildSpecification to your supervision tree
+pub fn supervised(db: Db, name: Name(HostEvent)) -> ChildSpecification(Nil)
+```
+
+Internally each message calls `pg_events.record_event(db:, event:)`, which maps the `HostEvent` to `(event_type, payload JSON, duration_ms)` and `INSERT`s it. Writes are fire-and-forget: a failure is logged at `Error` level but does not crash the consumer — observability is best-effort and must not take down the pipeline.
+
+**Wiring it in** — register via the same `ConsumerSpec` mechanism every other consumer uses:
+
+```gleam
+import yard/obs/pg_events
+
+let assert Ok(yard_pg) = pg_events.start_consumer(global_conn)
+// then register `yard_pg` with the dispatcher,
+// or pass a ConsumerSpec into yard.start(consumers)
+```
+
+The `examples/hermes-agent` app uses this in production — it starts a `pg_events` consumer against the shared global connection so every run is queryable alongside `absurd_runs`.
+
+---
+
 ## Summary
 
 | Question | Answer |
@@ -675,5 +729,6 @@ Or keep it simple — tests don't need to assert on events at all. The runner em
 | How do new triggers work? | Set `trigger_type`/`trigger_source` in config. Runner emits them as metadata |
 | How do concurrent runs correlate? | `run_id` — unique per invocation, carried by every event |
 | How do you identify actor versions? | `actor_hash` — SHA-256 of canonical S-expression, first 8 chars |
-| How many HostEvent variants? | Five: `ActorStarted`, `ActorCompleted`, `EffectYielded`, `EffectHandled`, `PigEvent` |
-| How many telemetry event names? | Four: `yard.actor.started`, `yard.actor.completed`, `yard.effect.yielded`, `yard.effect.handled` |
+| How many HostEvent variants? | Five: `ActorStarted`, `ActorCompleted`, `EffectYielded`, `EffectHandled`, `EffectReplayed` |
+| How many telemetry event names? | Five: `yard.actor.started`, `yard.actor.completed`, `yard.effect.yielded`, `yard.effect.handled`, `yard.effect.replayed` |
+| Production event store? | `obs/pg_events.gleam` → `yard_events` Postgres table (JOINable on `run_id`) |
