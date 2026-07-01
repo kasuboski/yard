@@ -295,7 +295,7 @@ pub type HostEvent {
 }
 ```
 
-Five variants. That's it. Every effect, every trigger, every actor is covered. `trigger_type` and `effect_name` are data fields — adding new ones requires zero code changes. (`PigEvent` was an earlier design for bridging pig agent events into the host stream; it is not currently a `HostEvent` variant — see [The Pig Bridge](#the-pig-bridge).)
+Five variants. That's it. Every effect, every trigger, every actor is covered. `trigger_type` and `effect_name` are data fields — adding new ones requires zero code changes. (Pig agent-internal events are bridged into a **separate** `pig_events` table keyed by `run_id`, never as a `HostEvent` variant — see [The Pig Bridge — `pig_events` (future work)](#the-pig-bridge--pig_events-future-work).)
 
 ### Actor identity: `actor_path` vs `actor_hash`
 
@@ -468,41 +468,92 @@ If the dispatcher becomes a bottleneck (unlikely at normal webhook volumes), you
 
 ---
 
-## The Pig Bridge
+## The Pig Bridge — `pig_events` (future work)
 
-> **Current state:** Yard no longer defines a `PigEvent` variant on `HostEvent`. Pig agents keep their own observability stack (pig's dispatcher + pig consumers), and yard observes the host side (`ActorStarted`/`EffectYielded`/`EffectHandled`/`ActorCompleted`) around the `run_agent` call. The forwarding pattern below is retained as design context for reconnecting the two streams; it is not wired up today.
+> **Status:** Future work — not implemented. Yard today observes only the host side around `run_agent` (`EffectYielded` → `EffectHandled`); pig's rich agent-internal events (token usage, tool calls, inference timing) are not captured. The design below is the agreed direction for hosted yard. It does **not** add a `PigEvent` variant to `HostEvent` — the two streams are correlated by `run_id` and stored in **separate tables**, never merged into one type.
 
-When the `run_agent` handler starts a pig agent, it can register a forwarding consumer with pig's dispatcher. Pig events would be wrapped with the host's `run_id` for correlation:
+### Why not pig's filesystem
+
+Pig's only storage sink is a JSONL file (`pig/obs/session.gleam`, via `simplifile.append`, opt-in per agent). Hosted yard cannot touch the filesystem, so the JSONL writer is simply not registered. This is safe because yard never depends on pig's file replay for correctness:
+- **Resume** uses `pig.run_continue()` on a *live* agent (in-memory) — not `session.replay(path)`.
+- **Agent message history** is yard-owned and already DB-backed (`pg_conversation.gleam` → `conversations(id, agent_id, user_key, messages jsonb)`), loaded by `durable_turn.assemble_history` and seeded into pig via `with_initial_history`.
+
+So both filesystem writers (pig's JSONL *and* yard's own `obs/session.gleam`) are dropped in hosted mode by not registering them; pig needs no changes and resume/history are unaffected.
+
+### The design — correlate, don't merge
+
+`run_id` is a **join key between two separately-owned stores**, not a reason to put pig rows in `yard_events`. Pig keeps its `SessionEvent` type and its dispatcher; yard keeps `HostEvent` and `yard_events`; the two meet only at query time, joined by `run_id`. Direct-writing pig events into `yard_events` is an anti-pattern: yard readers would decode `payload` as a `HostEvent` and fail, and it creates a reverse dependency (pig → yard schema) hidden behind type-erasure.
+
+Two key facts make the bridge clean:
+1. **Pig's dispatcher is per-agent** (`start_supervised` builds a fresh dispatcher + consumers per agent, OneForAll). A consumer registered for one agent receives only that agent's events — so `run_id` is captured in the **consumer's own state** at construction. No id field is added to `SessionEvent`, and there is no global disambiguation problem.
+2. **Dependency is one-directional**: yard → pig only (yard registers a consumer with pig). Pig is untouched.
+
+### New table (yard-owned, namespaced)
+
+In `yard/src/yard/sql/durable_schema.sql`:
+
+```sql
+CREATE TABLE IF NOT EXISTS pig_events (
+  id          BIGSERIAL PRIMARY KEY,
+  run_id      UUID NOT NULL,
+  event_type  TEXT NOT NULL,        -- "pig.session.started", "pig.inference.completed", ...
+  payload     JSONB NOT NULL,
+  duration_ms INTEGER,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_pig_events_run_id ON pig_events(run_id);
+```
+
+A mirror of `yard_events`, separate table, `pig.*` event-type namespace. Yard decodes `yard_events.payload` as `HostEvent` and `pig_events.payload` as `SessionEvent` — the namespace makes the two never ambiguous.
+
+### New module — `yard/src/yard/obs/pig_events.gleam`
+
+A consumer of **pig's** `SessionEvent` (not yard's `HostEvent`). Same actor shape as the existing `obs/pg_events.gleam`, but a different event type and dispatcher. State captures the correlation context up front:
 
 ```gleam
-// Inside the run_agent effect handler:
-
-fn run_agent_handler(handlers, obs, actor_path, run_id) -> EffectHandler {
-  fn(_name, args) {
-    // ... extract request fields ...
-
-    // Forwarding consumer: pig → host
-    let forwarder = actor.new(...)
-      |> actor.on_message(fn(state, pig_event) {
-        process.send(obs, Event(PigEvent(
-          actor_path:,
-          actor_hash:,
-          run_id:,
-          event: pig_event,
-        )))
-        actor.continue(state)
-      })
-
-    let consumer_specs = [forwarder_spec]
-    let assert Ok(agent) = pig.supervisor.start_supervised(config, consumer_specs)
-
-    case pig.supervisor.run(agent, task) {
-      Ok(result) -> Ok(StringVal(result.content))
-      Error(e) -> Ok(ErrorVal(StringVal(error_to_string(e))))
-    }
-  }
-}
+State(db, run_id, actor_path, actor_hash)
 ```
+
+`on_message(SessionEvent)` maps the variant to `(event_type: "pig." <> kind, payload: encode(event), duration_ms)` and `INSERT`s into `pig_events`. Fire-and-forget, best-effort — the same resilience rule as the host consumer: a write failure is logged at `Error` and never crashes the consumer.
+
+It exposes a **factory returning a pig `ConsumerSpec`**, so it drops straight into pig's `consumer_specs` list:
+
+```gleam
+pub fn consumer_spec(
+  db: Db,
+  run_id: String,
+  actor_path: String,
+  actor_hash: String,
+) -> pig.ConsumerSpec
+```
+
+### Wiring — yard's `run_agent` handler
+
+The handler already has `run_id` (from `RunConfig`). When it builds the pig config it registers the yard consumer and **omits** pig's JSONL writer:
+
+```gleam
+let pig_config = pig.config(...)
+  |> pig.add_consumer(pig_events.consumer_spec(db, run_id, actor_path, actor_hash))
+  // NOTE: no pig.with_session_writer(path) in hosted mode — no filesystem
+```
+
+That single consumer is the whole bridge. Pig keeps its type, its dispatcher, and its consumer model. Yard owns the table, the row adapter, and the consumer.
+
+### Hosted vs local
+
+- **Hosted**: register yard's `pig_events` consumer only. Zero filesystem.
+- **Local/dev**: optionally *also* register pig's terminal consumer for stdout, or pig's JSONL writer for replay tooling. Both still work — they are just additional consumers on the same per-agent dispatcher. Pig's FS writer is not deleted, merely not selected in hosted configs.
+
+### Unified trace query
+
+```sql
+SELECT 'host' AS src, event_type, payload, created_at FROM yard_events WHERE run_id = $1
+UNION ALL
+SELECT 'pig',        event_type, payload, created_at FROM pig_events WHERE run_id = $1
+ORDER BY created_at;
+```
+
+Filter by `run_id` for one invocation's full trace; aggregate `pig_events` (token totals, slow tools, failure rates) in plain SQL. All from two typed, namespaced tables joined on `run_id`.
 
 ---
 
