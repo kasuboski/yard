@@ -5,7 +5,7 @@
 //// correlated at query time by run_id only.
 
 import gabsurd/client.{type Db}
-import gleam/erlang/process.{type Name, type Subject, new_name}
+import gleam/erlang/process.{type Name, type Subject, new_name, spawn_unlinked}
 import gleam/json
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -130,16 +130,26 @@ fn handle_message(
   state: State,
   event: SessionEvent,
 ) -> actor.Next(State, SessionEvent) {
-  case record_session_event(db: state.db, run_id: state.run_id, event:) {
-    Ok(_) -> actor.continue(state)
-    Error(_) -> {
-      logging.log(
-        logging.Error,
-        "pig_events: failed to write event to pig_events",
-      )
-      actor.continue(state)
+  // Fire-and-forget: run the write in an unlinked process so a pool crash
+  // (e.g. `pgo_pool:checkout` exiting with `noproc` during teardown, or any
+  // other exit raised inside `client.exec`) dies there and never propagates
+  // back to crash this consumer. Observability is best-effort — a write that
+  // fails or crashes is silently dropped. Pig emits late events
+  // (SessionEnded, etc.) after the caller stops the agent, so the consumer
+  // must survive writes against a pool that is already torn down.
+  let db = state.db
+  let run_id = state.run_id
+  process.spawn_unlinked(fn() {
+    case record_session_event(db:, run_id:, event:) {
+      Ok(_) -> Nil
+      Error(_) ->
+        logging.log(
+          logging.Error,
+          "pig_events: failed to write event to pig_events",
+        )
     }
-  }
+  })
+  actor.continue(state)
 }
 
 // ── Event Serialization ──────────────────────────────────────────────

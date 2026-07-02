@@ -22,6 +22,8 @@ pub type RunSummary {
 
 pub type EventRow {
   EventRow(
+    /// Which stream the event came from: "host" (yard_events) or "pig" (pig_events).
+    src: String,
     event_type: String,
     payload: String,
     duration_ms: Option(Int),
@@ -52,12 +54,20 @@ pub fn list_runs(db db: Db) -> List(RunSummary) {
   }
 }
 
-/// List events for a specific run.
+/// List events for a specific run, unified across both event streams.
+///
+/// Host events (yard_events) and pig agent-internal events (pig_events) are
+/// UNIONed and tagged with a `src` column ("host" / "pig"). The two tables
+/// are correlated solely by `run_id` — they are never merged into one type.
+/// Results are ordered chronologically so host and pig events interleave
+/// into a single trace.
 pub fn list_events(db db: Db, run_id run_id: String) -> List(EventRow) {
   let sql =
-    "SELECT event_type, payload::text, duration_ms, created_at::text
-     FROM yard_events
-     WHERE run_id::text = $1
+    "SELECT 'host' AS src, event_type, payload::text, duration_ms, created_at::text
+     FROM yard_events WHERE run_id::text = $1
+     UNION ALL
+     SELECT 'pig', event_type, payload::text, duration_ms, created_at::text
+     FROM pig_events WHERE run_id::text = $1
      ORDER BY created_at ASC"
   case
     client.query_many(db, #(sql, [dev.ParamString(run_id)], event_row_decoder()))
@@ -111,11 +121,18 @@ fn run_summary_decoder() -> decode.Decoder(RunSummary) {
 }
 
 fn event_row_decoder() -> decode.Decoder(EventRow) {
-  use event_type <- decode.field(0, decode.string)
-  use payload <- decode.field(1, decode.string)
-  use duration_ms <- decode.field(2, decode.optional(decode.int))
-  use created_at <- decode.field(3, decode.string)
-  decode.success(EventRow(event_type:, payload:, duration_ms:, created_at:))
+  use src <- decode.field(0, decode.string)
+  use event_type <- decode.field(1, decode.string)
+  use payload <- decode.field(2, decode.string)
+  use duration_ms <- decode.field(3, decode.optional(decode.int))
+  use created_at <- decode.field(4, decode.string)
+  decode.success(EventRow(
+    src:,
+    event_type:,
+    payload:,
+    duration_ms:,
+    created_at:,
+  ))
 }
 
 fn conversation_row_decoder() -> decode.Decoder(ConversationRow) {

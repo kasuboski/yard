@@ -10,7 +10,7 @@
 ////   process.send(dispatcher, dispatcher.RegisterConsumer(consumer))
 
 import gabsurd/client.{type Db}
-import gleam/erlang/process.{type Name, type Subject}
+import gleam/erlang/process.{type Name, type Subject, spawn_unlinked}
 import gleam/otp/actor.{type StartError}
 import gleam/otp/supervision
 import logging
@@ -60,17 +60,23 @@ fn handle_message(
   state: State,
   event: HostEvent,
 ) -> actor.Next(State, HostEvent) {
-  // Write to yard_events. Fire-and-forget — a write failure logs but
-  // does not crash the consumer (events are best-effort observability).
-  case pg_events.record_event(db: state.db, event:) {
-    Ok(_) -> actor.continue(state)
-    Error(_) -> {
-      // Log and continue — don't crash the observability pipeline
-      logging.log(
-        logging.Error,
-        "pg_events: failed to write event to yard_events",
-      )
-      actor.continue(state)
+  // Fire-and-forget: run the write in an unlinked process so a pool crash
+  // (e.g. `pgo_pool:checkout` exiting with `noproc` during teardown, or any
+  // other exit raised inside `client.exec`) dies there and never propagates
+  // back to crash this consumer. Observability is best-effort — a write that
+  // fails or crashes is silently dropped. Late events may arrive after the
+  // caller's pool is torn down, so the consumer must survive such writes.
+  let db = state.db
+  process.spawn_unlinked(fn() {
+    case pg_events.record_event(db:, event:) {
+      Ok(_) -> Nil
+      Error(_) ->
+        // Log and continue — don't crash the observability pipeline
+        logging.log(
+          logging.Error,
+          "pg_events: failed to write event to yard_events",
+        )
     }
-  }
+  })
+  actor.continue(state)
 }
