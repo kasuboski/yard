@@ -11,7 +11,7 @@ packages = [
   { name = "esqlite", version = "0.9.0", build_tools = ["rebar3"], requirements = [], otp_app = "esqlite", source = "hex", outer_checksum = "CCF72258A4EE152EC7AD92AA9A03552EB6CA1B06B65C93AD5B6E55C302E05855" },
   { name = "exception", version = "2.1.1", build_tools = ["gleam"], requirements = ["gleam_stdlib"], otp_app = "exception", source = "hex", outer_checksum = "6BDEA95248093599391C3B5DF1835C5C6A86C353C2F99CE539B450E3432FE117" },
   { name = "filepath", version = "1.1.2", build_tools = ["gleam"], requirements = ["gleam_stdlib"], otp_app = "filepath", source = "hex", outer_checksum = "B06A9AF0BF10E51401D64B98E4B627F1D2E48C154967DA7AF4D0914780A6D40A" },
-  { name = "gabsurd", version = "0.1.0", build_tools = ["gleam"], requirements = ["envoy", "gleam_erlang", "gleam_json", "gleam_otp", "gleam_stdlib", "gleam_time", "parrot", "pog"], source = "local", path = "../../gabsurd" },
+  { name = "gabsurd", version = "0.1.0", build_tools = ["gleam"], requirements = ["envoy", "gleam_erlang", "gleam_json", "gleam_otp", "gleam_stdlib", "gleam_time", "parrot", "pog"], otp_app = "gabsurd", source = "hex", outer_checksum = "8D720598350D5F8CEFF17F4B0042A30540557743CE4237FF6630FCDB0C3CF942" },
   { name = "gleam_crypto", version = "1.6.0", build_tools = ["gleam"], requirements = ["gleam_stdlib"], otp_app = "gleam_crypto", source = "hex", outer_checksum = "2DE9E4EF53CF6FEE049D4F765731F7178F7A11AEFAE00EEE63BF7536B354AD3F" },
   { name = "gleam_erlang", version = "1.3.0", build_tools = ["gleam"], requirements = ["gleam_stdlib"], otp_app = "gleam_erlang", source = "hex", outer_checksum = "1124AD3AA21143E5AF0FC5CF3D9529F6DB8CA03E43A55711B60B6B7B3874375C" },
   { name = "gleam_http", version = "4.3.0", build_tools = ["gleam"], requirements = ["gleam_stdlib"], otp_app = "gleam_http", source = "hex", outer_checksum = "82EA6A717C842456188C190AFB372665EA56CE13D8559BF3B1DD9E40F619EE0C" },
@@ -50,7 +50,7 @@ packages = [
 ballast = { path = "../ballast" }
 birl = { version = ">= 1.7.1 and < 2.0.0" }
 chute = { path = "../chute" }
-gabsurd = { path = "../../gabsurd" }
+gabsurd = { version = ">= 0.1.0 and < 1.0.0" }
 gleam_erlang = { version = ">= 1.0.0 and < 2.0.0" }
 gleam_json = { version = ">= 3.0.0 and < 4.0.0" }
 gleam_otp = { version = ">= 1.2.0 and < 2.0.0" }

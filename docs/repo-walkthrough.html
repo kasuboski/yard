@@ -264,12 +264,11 @@
   ↑
 <span class="ballast">ballast</span>        <span class="cm">// chute = { path = "../chute" }</span>
   ↑
-<span class="yard">yard</span>           <span class="cm">// chute + ballast + gabsurd + pig (pig from hex)</span>
+<span class="yard">yard</span>           <span class="cm">// chute + ballast + gabsurd (hex) + pig (hex)</span>
   ↑
-<span class="bal">examples</span>       <span class="cm">// chute + ballast + yard (pig from hex)</span>
+<span class="bal">examples</span>       <span class="cm">// chute + ballast + yard (gabsurd + pig from hex)</span>
 
-<span class="cm">// sibling project outside this repo (path dep)</span>
-<span class="nm">gabsurd</span>        <span class="cm">// ../../gabsurd — Postgres durable workflow engine</span>
+<span class="cm">// no local path deps — all external packages come from hex</span>
 </code></pre>
     </div>
     <div>
@@ -277,7 +276,7 @@
       <table class="tbl">
         <tr><th>Dependency</th><th>Role in the stack</th></tr>
         <tr><td><code>pig</code></td><td>LLM agent loop — providers (OpenAI-compatible), tool calls, workspace (VFS + KV SQLite), session events. The "brain" Yard delegates <code>run_agent</code> effects to. Consumed from <strong>hex</strong> (v0.1.0+).</td></tr>
-        <tr><td><code>gabsurd</code></td><td>Gleam bindings to <strong>Absurd</strong>, a Postgres-native durable workflow engine. Powers Yard's global registry (agents, skills, runs, chat), checkpoints, task queues, cron scheduling, and crash-resume.</td></tr>
+        <tr><td><code>gabsurd</code></td><td>Gleam bindings to <strong>Absurd</strong>, a Postgres-native durable workflow engine. Powers Yard's global registry (agents, skills, runs, chat), checkpoints, task queues, cron scheduling, and crash-resume. Consumed from <strong>hex</strong> (v0.1.0+).</td></tr>
         <tr><td><code>sqlight</code></td><td>SQLite driver — per-agent workspace only (VFS + KV via pig/workspace).</td></tr>
         <tr><td><code>parrot</code></td><td><code>parrot/dev</code> — typed SQL parameter &amp; decoder types used by <code>db.gleam</code> and <code>pg_*.gleam</code> for Postgres queries.</td></tr>
         <tr><td><code>mist</code></td><td>HTTP server — serves the observability dashboard.</td></tr>
@@ -287,9 +286,9 @@
     </div>
   </div>
 
-  <div class="callout warn">
-    <span class="tag">⚠ One package lives outside this repo</span>
-    <code>gabsurd</code> (<code>../../gabsurd</code>) is a sibling project referenced by relative path — the repo will not build without it on disk. Yard's durable Postgres features depend on it. <code>pig</code> used to be a local path dep too, but is now consumed from <strong>hex</strong> (v0.1.0+), so only <code>gabsurd</code> needs to be checked out locally.
+  <div class="callout key">
+    <span class="tag">No local path deps</span>
+    Both <code>pig</code> and <code>gabsurd</code> used to be sibling projects referenced by relative path, but both are now published to <strong>hex</strong> (pig v0.1.0+, gabsurd v0.1.0+) and consumed as normal hex dependencies. The repo builds from a clean clone with no sibling checkouts required. (To test a local in-development copy of either against yard, swap the hex requirement for a temporary <code>path =</code> override.)
   </div>
 </section>
 
