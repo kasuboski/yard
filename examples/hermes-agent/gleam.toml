@@ -10,7 +10,7 @@ gleam_json = ">= 3.1.0 and < 4.0.0"
 chute = { path = "../../chute" }
 ballast = { path = "../../ballast" }
 yard = { path = "../../yard" }
-pig = { path = "../../../pig" }
+pig = ">= 0.1.0 and < 1.0.0"
 gabsurd = { path = "../../../gabsurd" }
 sqlight = ">= 1.1.0 and < 2.0.0"
 jscheam = ">= 2.0.0 and < 3.0.0"

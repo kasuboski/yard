@@ -12,7 +12,7 @@ telemetry = ">= 1.0.0 and < 2.0.0"
 chute = { path = "../chute" }
 ballast = { path = "../ballast" }
 gabsurd = { path = "../../gabsurd" }
-pig = { path = "../../pig" }
+pig = ">= 0.1.0 and < 1.0.0"
 
 # HTTP server for observability UI
 mist = ">= 4.0.0"

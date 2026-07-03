@@ -264,12 +264,11 @@
   ↑
 <span class="ballast">ballast</span>        <span class="cm">// chute = { path = "../chute" }</span>
   ↑
-<span class="yard">yard</span>           <span class="cm">// chute + ballast + gabsurd + pig</span>
+<span class="yard">yard</span>           <span class="cm">// chute + ballast + gabsurd + pig (pig from hex)</span>
   ↑
-<span class="bal">examples</span>       <span class="cm">// chute + ballast + yard + pig</span>
+<span class="bal">examples</span>       <span class="cm">// chute + ballast + yard (pig from hex)</span>
 
-<span class="cm">// sibling projects outside this repo (path deps)</span>
-<span class="nm">pig</span>            <span class="cm">// ../pig        — LLM agent framework</span>
+<span class="cm">// sibling project outside this repo (path dep)</span>
 <span class="nm">gabsurd</span>        <span class="cm">// ../../gabsurd — Postgres durable workflow engine</span>
 </code></pre>
     </div>
@@ -277,7 +276,7 @@
       <h4>What each external dep is for</h4>
       <table class="tbl">
         <tr><th>Dependency</th><th>Role in the stack</th></tr>
-        <tr><td><code>pig</code></td><td>LLM agent loop — providers (OpenAI-compatible), tool calls, workspace (VFS + KV SQLite), session events. The "brain" Yard delegates <code>run_agent</code> effects to.</td></tr>
+        <tr><td><code>pig</code></td><td>LLM agent loop — providers (OpenAI-compatible), tool calls, workspace (VFS + KV SQLite), session events. The "brain" Yard delegates <code>run_agent</code> effects to. Consumed from <strong>hex</strong> (v0.1.0+).</td></tr>
         <tr><td><code>gabsurd</code></td><td>Gleam bindings to <strong>Absurd</strong>, a Postgres-native durable workflow engine. Powers Yard's global registry (agents, skills, runs, chat), checkpoints, task queues, cron scheduling, and crash-resume.</td></tr>
         <tr><td><code>sqlight</code></td><td>SQLite driver — per-agent workspace only (VFS + KV via pig/workspace).</td></tr>
         <tr><td><code>parrot</code></td><td><code>parrot/dev</code> — typed SQL parameter &amp; decoder types used by <code>db.gleam</code> and <code>pg_*.gleam</code> for Postgres queries.</td></tr>
@@ -289,8 +288,8 @@
   </div>
 
   <div class="callout warn">
-    <span class="tag">⚠ Two packages live outside this repo</span>
-    <code>pig</code> (<code>../pig</code>) and <code>gabsurd</code> (<code>../../gabsurd</code>) are sibling projects referenced by relative path. The repo will not build without them on disk in those locations. Yard's durable features (Postgres) and its LLM integration depend on them.
+    <span class="tag">⚠ One package lives outside this repo</span>
+    <code>gabsurd</code> (<code>../../gabsurd</code>) is a sibling project referenced by relative path — the repo will not build without it on disk. Yard's durable Postgres features depend on it. <code>pig</code> used to be a local path dep too, but is now consumed from <strong>hex</strong> (v0.1.0+), so only <code>gabsurd</code> needs to be checked out locally.
   </div>
 </section>
 
