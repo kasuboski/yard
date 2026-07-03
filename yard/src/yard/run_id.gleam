@@ -6,7 +6,8 @@
 //// client-side (UUID v4) so it is unique even if the database is unavailable —
 //// no DB round trip, no collision-prone static fallback.
 
-import youid/uuid
+import gleam/string
+import gluid
 
 /// Generate a fresh, unique run_id (UUID v4 in standard text form).
 ///
@@ -15,6 +16,5 @@ import youid/uuid
 /// even under transient database degradation. UUID v4 provides that
 /// without coordination.
 pub fn generate() -> String {
-  uuid.v4()
-  |> uuid.to_string
+  gluid.guidv4() |> string.lowercase()
 }
