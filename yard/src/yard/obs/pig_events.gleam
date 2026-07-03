@@ -4,6 +4,7 @@
 //// inference timing) separately from yard_events. The two tables are
 //// correlated at query time by run_id only.
 
+import birl
 import gabsurd/client.{type Db}
 import gleam/erlang/process.{type Name, type Subject, new_name, spawn_unlinked}
 import gleam/json
@@ -30,17 +31,39 @@ import pig/obs/events.{
   ToolStarted,
 }
 
-/// Record a SessionEvent to the pig_events table.
+/// Record a SessionEvent to the pig_events table, stamping `created_at` with
+/// the current time captured on this caller's clock.
 pub fn record_session_event(
   db db: Db,
   run_id run_id: String,
   event event: SessionEvent,
 ) -> Result(Nil, EventStoreError) {
+  record_session_event_at(
+    db:,
+    run_id:,
+    event:,
+    created_at: birl.to_iso8601(birl.utc_now()),
+  )
+}
+
+/// Record a SessionEvent with an explicit `created_at` timestamp.
+///
+/// The timestamp is captured by the caller (before any async hand-off) so it
+/// reflects event-arrival order rather than insert-completion order. The
+/// consumer writes fire-and-forget in an unlinked process; without a
+/// caller-supplied timestamp the DB `now()` default would be evaluated at
+/// insert time and could race, reordering the unified trace.
+pub fn record_session_event_at(
+  db db: Db,
+  run_id run_id: String,
+  event event: SessionEvent,
+  created_at created_at: String,
+) -> Result(Nil, EventStoreError) {
   let #(event_type, payload, duration_ms) = event_to_parts(event)
   let sql =
     "
-    INSERT INTO pig_events (run_id, event_type, payload, duration_ms)
-    VALUES ($1::uuid, $2, $3::jsonb, $4)
+    INSERT INTO pig_events (run_id, event_type, payload, duration_ms, created_at)
+    VALUES ($1::uuid, $2, $3::jsonb, $4, $5::text::timestamptz)
     "
   case
     client.exec(
@@ -53,6 +76,7 @@ pub fn record_session_event(
           Some(ms) -> Some(dev.ParamInt(ms))
           None -> None
         }),
+        dev.ParamString(created_at),
       ]),
     )
   {
@@ -130,17 +154,19 @@ fn handle_message(
   state: State,
   event: SessionEvent,
 ) -> actor.Next(State, SessionEvent) {
-  // Fire-and-forget: run the write in an unlinked process so a pool crash
-  // (e.g. `pgo_pool:checkout` exiting with `noproc` during teardown, or any
-  // other exit raised inside `client.exec`) dies there and never propagates
-  // back to crash this consumer. Observability is best-effort — a write that
-  // fails or crashes is silently dropped. Pig emits late events
-  // (SessionEnded, etc.) after the caller stops the agent, so the consumer
-  // must survive writes against a pool that is already torn down.
+  // Capture the timestamp BEFORE the async write so it reflects event-arrival
+  // order (this consumer processes messages strictly in order), not
+  // insert-completion order. The write itself runs fire-and-forget in an
+  // unlinked process: a pool crash (e.g. `pgo_pool:checkout` exiting with
+  // `noproc` during teardown, or any other exit raised inside `client.exec`)
+  // dies there and never propagates back to crash this consumer. Pig emits
+  // late events (SessionEnded, etc.) after the caller stops the agent, so the
+  // consumer must survive writes against a pool that is already torn down.
   let db = state.db
   let run_id = state.run_id
+  let created_at = birl.to_iso8601(birl.utc_now())
   process.spawn_unlinked(fn() {
-    case record_session_event(db:, run_id:, event:) {
+    case record_session_event_at(db:, run_id:, event:, created_at:) {
       Ok(_) -> Nil
       Error(_) ->
         logging.log(

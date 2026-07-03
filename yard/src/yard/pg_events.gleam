@@ -5,13 +5,15 @@
 //// by a `yard_events` table in PostgreSQL, JOINable with gabsurd's
 //// absurd_checkpoints and absurd_runs on run_id.
 
+import birl
 import gabsurd/client.{type Db}
 import gleam/json
 import gleam/option
 import parrot/dev
 import yard/obs/events.{type HostEvent}
 
-/// Record a HostEvent to the yard_events table.
+/// Record a HostEvent to the yard_events table, stamping `created_at` with the
+/// current time captured on this caller's clock.
 ///
 /// This is the PostgreSQL equivalent of the JSONL session writer.
 /// In production, the dispatcher fans out to both this and any remaining
@@ -20,11 +22,26 @@ pub fn record_event(
   db db: Db,
   event event: HostEvent,
 ) -> Result(Nil, EventStoreError) {
+  record_event_at(db:, event:, created_at: birl.to_iso8601(birl.utc_now()))
+}
+
+/// Record a HostEvent with an explicit `created_at` timestamp.
+///
+/// The timestamp is captured by the caller (before any async hand-off) so it
+/// reflects event-arrival order rather than insert-completion order. This
+/// matters because the consumer writes fire-and-forget in an unlinked
+/// process — without a caller-supplied timestamp the DB `now()` default would
+/// be evaluated at insert time, which can race and reorder the unified trace.
+pub fn record_event_at(
+  db db: Db,
+  event event: HostEvent,
+  created_at created_at: String,
+) -> Result(Nil, EventStoreError) {
   let #(event_type, payload, duration_ms) = event_to_parts(event)
   let sql =
     "
-    INSERT INTO yard_events (run_id, event_type, payload, duration_ms)
-    VALUES ($1::uuid, $2, $3::jsonb, $4)
+    INSERT INTO yard_events (run_id, event_type, payload, duration_ms, created_at)
+    VALUES ($1::uuid, $2, $3::jsonb, $4, $5::text::timestamptz)
     "
   let run_id = event_run_id(event)
   case
@@ -38,6 +55,7 @@ pub fn record_event(
           option.Some(ms) -> option.Some(dev.ParamInt(ms))
           option.None -> option.None
         }),
+        dev.ParamString(created_at),
       ]),
     )
   {

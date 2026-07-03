@@ -12,19 +12,17 @@
 ////   stop()    — no-op (agents are ephemeral, created per-turn by agent_turn)
 
 import gabsurd/client.{type Db}
-import gleam/dynamic/decode
 import gleam/io
-import gleam/list
 import gleam/option
 import gleam/result
 import pig/ai/message.{type Message}
 import pig/ai/provider.{type Provider}
 import pig/tool
 import sqlight
-import yard/agent_checkpoint
 import yard/agent_turn
 import yard/conversation.{type ConversationStore}
 import yard/pg_conversation
+import yard/run_id
 
 // ═══════════════════════════════════════════════════════════════
 // Types
@@ -125,12 +123,10 @@ pub fn run_prompt(
   session: HermesSession,
   prompt: String,
 ) -> Result(String, Nil) {
-  // Each turn gets a fresh run_id so host (yard_events) and pig
-  // (pig_events) events for this invocation can be correlated.
-  let run_id = case generate_run_id(session.db) {
-    Ok(id) -> id
-    Error(_) -> "00000000-0000-0000-0000-000000000000"
-  }
+  // Each turn gets a fresh run_id (UUID v4, client-side) so host
+  // (yard_events) and pig (pig_events) events for this invocation can be
+  // correlated. Generated client-side so it is unique even if the DB is down.
+  let run_id = run_id.generate()
   case
     agent_turn.execute_turn(
       conv_store: session.conv_store,
@@ -156,17 +152,6 @@ pub fn run_prompt(
       Error(Nil)
     }
   }
-}
-
-/// Generate a fresh UUID run_id from Postgres.
-fn generate_run_id(db: Db) -> Result(String, Nil) {
-  client.query_one(db, #("SELECT gen_random_uuid()::text", [], run_id_decoder()))
-  |> result.replace_error(Nil)
-}
-
-fn run_id_decoder() -> decode.Decoder(String) {
-  use id <- decode.field(0, decode.string)
-  decode.success(id)
 }
 
 // ═══════════════════════════════════════════════════════════════
