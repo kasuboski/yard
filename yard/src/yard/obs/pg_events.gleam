@@ -9,8 +9,9 @@
 ////   let assert Ok(consumer) = pg_events.start_consumer(db)
 ////   process.send(dispatcher, dispatcher.RegisterConsumer(consumer))
 
+import birl
 import gabsurd/client.{type Db}
-import gleam/erlang/process.{type Name, type Subject}
+import gleam/erlang/process.{type Name, type Subject, spawn_unlinked}
 import gleam/otp/actor.{type StartError}
 import gleam/otp/supervision
 import logging
@@ -60,17 +61,26 @@ fn handle_message(
   state: State,
   event: HostEvent,
 ) -> actor.Next(State, HostEvent) {
-  // Write to yard_events. Fire-and-forget — a write failure logs but
-  // does not crash the consumer (events are best-effort observability).
-  case pg_events.record_event(db: state.db, event:) {
-    Ok(_) -> actor.continue(state)
-    Error(_) -> {
-      // Log and continue — don't crash the observability pipeline
-      logging.log(
-        logging.Error,
-        "pg_events: failed to write event to yard_events",
-      )
-      actor.continue(state)
+  // Capture the timestamp BEFORE the async write so it reflects event-arrival
+  // order (this consumer processes messages strictly in order), not
+  // insert-completion order. The write itself runs fire-and-forget in an
+  // unlinked process: a pool crash (e.g. `pgo_pool:checkout` exiting with
+  // `noproc` during teardown, or any other exit raised inside `client.exec`)
+  // dies there and never propagates back to crash this consumer. Pig emits
+  // late events after the caller stops the agent, so the consumer must
+  // survive writes against a pool that is already torn down.
+  let db = state.db
+  let created_at = birl.to_iso8601(birl.utc_now())
+  process.spawn_unlinked(fn() {
+    case pg_events.record_event_at(db:, event:, created_at:) {
+      Ok(_) -> Nil
+      Error(_) ->
+        // Log and continue — don't crash the observability pipeline
+        logging.log(
+          logging.Error,
+          "pg_events: failed to write event to yard_events",
+        )
     }
-  }
+  })
+  actor.continue(state)
 }

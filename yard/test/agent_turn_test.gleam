@@ -54,6 +54,7 @@ pub fn first_turn_calls_llm_and_returns_test() {
       system_prompt: "",
       agent_name: "test-agent",
       run_timeout_ms: 5000,
+      bridge: option.None,
     )
 
   let assert Ok(agent_turn.TurnResult(messages:, final_message:)) = result
@@ -82,6 +83,7 @@ pub fn provider_error_returns_error_test() {
       system_prompt: "",
       agent_name: "test-agent",
       run_timeout_ms: 5000,
+      bridge: option.None,
     )
 
   let assert Error(agent_turn.TurnError(_)) = result
@@ -103,6 +105,7 @@ pub fn conversation_saved_on_success_test() {
       system_prompt: "",
       agent_name: "test-agent",
       run_timeout_ms: 5000,
+      bridge: option.None,
     )
 
   // Conversation store should have the full message log

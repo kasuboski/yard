@@ -15,6 +15,7 @@
 //// entry-point resolution: ToolUse → execute tools, Stop → return cached,
 //// Length/Error → re-call provider. We don't need to reimplement it.
 
+import gabsurd/client.{type Db}
 import gleam/list
 import gleam/option
 import gleam/otp/actor.{type StartError}
@@ -27,6 +28,7 @@ import pig/ai/provider.{type Provider}
 import pig/tool
 import yard/agent_checkpoint
 import yard/conversation.{type ConversationStore}
+import yard/obs/pig_events
 
 /// Result of executing an agent turn.
 pub type TurnResult {
@@ -36,6 +38,18 @@ pub type TurnResult {
 /// Error from a turn execution.
 pub type TurnError {
   TurnError(String)
+}
+
+/// Correlation context for bridging pig's SessionEvent stream into the
+/// `pig_events` store.
+///
+/// When present, `execute_turn` registers a `pig_events` consumer on the
+/// pig config so pig's agent-internal events (token usage, tool calls,
+/// inference timing) are captured alongside the host stream. The two are
+/// correlated solely by `run_id` — never merged. Pass `None` to skip the
+/// bridge (e.g. in tests with no database).
+pub type BridgeConfig {
+  BridgeConfig(db: Db, run_id: String, actor_path: String, actor_hash: String)
 }
 
 /// Execute one agent turn using pig with conversation persistence.
@@ -58,6 +72,9 @@ pub type TurnError {
 /// - `tools`: Registered tools (chute_exec, etc.)
 /// - `system_prompt`: System prompt for the agent
 /// - `agent_name`: Agent identifier
+/// - `bridge`: When `Some`, registers a `pig_events` consumer capturing pig's
+///   agent-internal events into the `pig_events` table, correlated by `run_id`.
+///   Pass `None` when there is no database (e.g. unit tests).
 pub fn execute_turn(
   conv_store store: ConversationStore,
   conversation_id conversation_id: String,
@@ -67,6 +84,7 @@ pub fn execute_turn(
   system_prompt system_prompt: String,
   agent_name agent_name: String,
   run_timeout_ms run_timeout_ms: Int,
+  bridge bridge: option.Option(BridgeConfig),
 ) -> Result(TurnResult, TurnError) {
   // 1. Load conversation history from the store
   use history_option <- result.try(
@@ -93,6 +111,22 @@ pub fn execute_turn(
     |> pig.with_tools(tools)
 
   let pig_config = pig.with_initial_history(pig_config, messages)
+
+  // 3b. Bridge pig's SessionEvent stream into pig_events when a bridge is
+  //     configured. Hosted mode registers this consumer and omits pig's
+  //     filesystem session writer — the two streams stay in separate tables,
+  //     joined at query time by run_id.
+  let pig_config = case bridge {
+    option.Some(cfg) ->
+      pig_config
+      |> pig.add_consumer(pig_events.consumer_spec(
+        cfg.db,
+        cfg.run_id,
+        cfg.actor_path,
+        cfg.actor_hash,
+      ))
+    option.None -> pig_config
+  }
 
   case pig.start(pig_config) {
     Error(e) ->

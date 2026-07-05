@@ -264,21 +264,19 @@
   ↑
 <span class="ballast">ballast</span>        <span class="cm">// chute = { path = "../chute" }</span>
   ↑
-<span class="yard">yard</span>           <span class="cm">// chute + ballast + gabsurd + pig</span>
+<span class="yard">yard</span>           <span class="cm">// chute + ballast + gabsurd (hex) + pig (hex)</span>
   ↑
-<span class="bal">examples</span>       <span class="cm">// chute + ballast + yard + pig</span>
+<span class="bal">examples</span>       <span class="cm">// chute + ballast + yard (gabsurd + pig from hex)</span>
 
-<span class="cm">// sibling projects outside this repo (path deps)</span>
-<span class="nm">pig</span>            <span class="cm">// ../pig        — LLM agent framework</span>
-<span class="nm">gabsurd</span>        <span class="cm">// ../../gabsurd — Postgres durable workflow engine</span>
+<span class="cm">// no local path deps — all external packages come from hex</span>
 </code></pre>
     </div>
     <div>
       <h4>What each external dep is for</h4>
       <table class="tbl">
         <tr><th>Dependency</th><th>Role in the stack</th></tr>
-        <tr><td><code>pig</code></td><td>LLM agent loop — providers (OpenAI-compatible), tool calls, workspace (VFS + KV SQLite), session events. The "brain" Yard delegates <code>run_agent</code> effects to.</td></tr>
-        <tr><td><code>gabsurd</code></td><td>Gleam bindings to <strong>Absurd</strong>, a Postgres-native durable workflow engine. Powers Yard's global registry (agents, skills, runs, chat), checkpoints, task queues, cron scheduling, and crash-resume.</td></tr>
+        <tr><td><code>pig</code></td><td>LLM agent loop — providers (OpenAI-compatible), tool calls, workspace (VFS + KV SQLite), session events. The "brain" Yard delegates <code>run_agent</code> effects to. Consumed from <strong>hex</strong> (v0.1.0+).</td></tr>
+        <tr><td><code>gabsurd</code></td><td>Gleam bindings to <strong>Absurd</strong>, a Postgres-native durable workflow engine. Powers Yard's global registry (agents, skills, runs, chat), checkpoints, task queues, cron scheduling, and crash-resume. Consumed from <strong>hex</strong> (v0.1.0+).</td></tr>
         <tr><td><code>sqlight</code></td><td>SQLite driver — per-agent workspace only (VFS + KV via pig/workspace).</td></tr>
         <tr><td><code>parrot</code></td><td><code>parrot/dev</code> — typed SQL parameter &amp; decoder types used by <code>db.gleam</code> and <code>pg_*.gleam</code> for Postgres queries.</td></tr>
         <tr><td><code>mist</code></td><td>HTTP server — serves the observability dashboard.</td></tr>
@@ -288,9 +286,9 @@
     </div>
   </div>
 
-  <div class="callout warn">
-    <span class="tag">⚠ Two packages live outside this repo</span>
-    <code>pig</code> (<code>../pig</code>) and <code>gabsurd</code> (<code>../../gabsurd</code>) are sibling projects referenced by relative path. The repo will not build without them on disk in those locations. Yard's durable features (Postgres) and its LLM integration depend on them.
+  <div class="callout key">
+    <span class="tag">No local path deps</span>
+    Both <code>pig</code> and <code>gabsurd</code> used to be sibling projects referenced by relative path, but both are now published to <strong>hex</strong> (pig v0.1.0+, gabsurd v0.1.0+) and consumed as normal hex dependencies. The repo builds from a clean clone with no sibling checkouts required. (To test a local in-development copy of either against yard, swap the hex requirement for a temporary <code>path =</code> override.)
   </div>
 </section>
 
@@ -337,12 +335,15 @@
 │   │       │   ├── dispatcher.gleam   <span class="cm"># shared OTP fan-out actor</span>
 │   │       │   ├── session.gleam      <span class="cm"># JSONL session writer consumer</span>
 │   │       │   ├── terminal.gleam     <span class="cm"># stdout printer consumer</span>
+│   │       │   ├── pg_events.gleam    <span class="cm"># yard_events consumer actor (Postgres host events)</span>
+│   │       │   ├── pig_events.gleam   <span class="cm"># pig SessionEvent → pig_events consumer (Pig Bridge)</span>
 │   │       │   └── {emit,consumer_spec}.gleam
 │   │       ├── durability.gleam       <span class="cm"># replay-or-record store (the durability seam)</span>
 │   │       ├── checkpoint.gleam       <span class="cm"># Checkpointer abstraction (in_memory impl)</span>
 │   │       ├── durable_handler.gleam  <span class="cm"># run a handler inside a gabsurd task</span>
-│   │       ├── agent_turn.gleam       <span class="cm"># durable Pig LLM turn (checkpoints responses)</span>
+│   │       ├── agent_turn.gleam       <span class="cm"># durable Pig LLM turn (checkpoints responses); bridges SessionEvents → pig_events</span>
 │   │       ├── agent_checkpoint.gleam <span class="cm"># message ↔ JSON for LLM durability</span>
+│   │       ├── run_id.gleam           <span class="cm"># client-side UUID run_id generation</span>
 │   │       ├── conversation.gleam     <span class="cm"># multi-turn conversation store</span>
 │   │       ├── durable_turn.gleam     <span class="cm"># assemble history on first run vs retry</span>
 │   │       ├── handler_registry.gleam <span class="cm"># name → builder; resolve per-agent handlers</span>
@@ -357,7 +358,7 @@
 │   │       │   ├── server.gleam · queries.gleam · template.gleam
 │   │       └── sql/                   <span class="cm"># SQL sources of truth</span>
 │   │           ├── pg_schema.sql      <span class="cm"># PostgreSQL DDL for registry tables (production)</span>
-│   │           ├── durable_schema.sql <span class="cm"># Postgres durable tables (conversations, yard_events)</span>
+│   │           ├── durable_schema.sql <span class="cm"># Postgres durable tables (conversations, yard_events, pig_events)</span>
 │   │           └── cron_test_stub.sql <span class="cm"># mock pg_cron extension for tests</span>
 │   ├── shared/  frontend/             <span class="cm"># build artefact dirs (gleam lockfiles)</span>
 │   └── test/                          <span class="cm"># 29 test files · 180 tests across every subsystem</span>
@@ -585,8 +586,13 @@
     <p style="text-align:center;font-size:13px;color:var(--ink-faint);margin:0">always projects to <code>:telemetry</code> · then fire-and-forget to consumers</p>
     <p style="text-align:center;font-size:20px;color:var(--ink-faint);margin:8px 0">▼ &nbsp; ▼ &nbsp; ▼</p>
     <div style="display:flex;justify-content:center;gap:10px;flex-wrap:wrap">
-      <span class="chip">Session writer (JSONL)</span><span class="chip">Terminal printer (stdout)</span><span class="chip">Postgres <code>yard_events</code></span><span class="chip">your custom consumer</span>
+      <span class="chip">Session writer (JSONL)</span><span class="chip">Terminal printer (stdout)</span><span class="chip">Postgres <code>yard_events</code></span><span class="chip">Postgres <code>pig_events</code></span><span class="chip">your custom consumer</span>
     </div>
+  </div>
+
+  <div class="callout key">
+    <span class="tag">Two streams, one trace</span>
+    There are <strong>two separate event tables, never merged into one type</strong>. Host lifecycle events (ActorStarted/EffectYielded/EffectHandled/…) are written by <code>obs/pg_events.gleam</code> into <code>yard_events</code>. Pig's agent-internal events — token usage, tool calls, inference timing, session start/end (namespaced like <code>pig.session_started</code>, <code>pig.inference_completed</code>, <code>pig.tool_executed</code>) — are written by <code>obs/pig_events.gleam</code> into <code>pig_events</code>. The dashboard <code>ui/queries.gleam</code> <code>list_events</code> UNIONs the two at query time (<code>UNION ALL</code> ordered by <code>created_at</code>, tagged with a <code>src</code> column — "host" vs "pig"). <strong><code>run_id</code> is the only correlation key</strong>: every agent invocation gets a fresh client-side UUID (<code>run_id.gleam</code>) so its host + pig events join into one trace.
   </div>
 
   <h4>Five HostEvent variants cover the entire lifecycle</h4>
@@ -647,8 +653,8 @@
     <div class="card">
       <span class="pill" style="background:#3a2342;color:var(--pig)">PostgreSQL — everything else</span>
       <h4>Platform registry + durability + conversations</h4>
-      <p>The global registry (<code>db.gleam</code> via <code>gabsurd/client.Db</code>), gabsurd/Absurd schema (tasks, runs, checkpoints, events), <code>yard_events</code>, <code>conversations</code>, <code>pg_cron</code> schedules. All in one PostgreSQL instance.</p>
-      <div class="files">sql/pg_schema.sql (registry DDL)<br>sql/durable_schema.sql (conversations, yard_events)<br>db.gleam · pg_conversation / pg_events / pg_cron.gleam<br>gabsurd_checkpointer.gleam</div>
+      <p>The global registry (<code>db.gleam</code> via <code>gabsurd/client.Db</code>), gabsurd/Absurd schema (tasks, runs, checkpoints, events), <code>yard_events</code>, <code>pig_events</code>, <code>conversations</code>, <code>pg_cron</code> schedules. All in one PostgreSQL instance.</p>
+      <div class="files">sql/pg_schema.sql (registry DDL)<br>sql/durable_schema.sql (conversations, yard_events, pig_events)<br>db.gleam · pg_conversation / pg_events / pig_events / pg_cron.gleam<br>gabsurd_checkpointer.gleam</div>
     </div>
   </div>
 
@@ -742,7 +748,7 @@
     <div class="varr">▼</div>
     <div class="vstep"><span class="stepnum">8</span>Ballast evaluates more, eventually returns <code>EvalDone</code> → runner emits <code>ActorCompleted</code>, returns <code>Ok(value)</code>.</div>
     <div class="varr">▼</div>
-    <div class="vstep"><span class="stepnum">9</span>Every event flowed: runner → dispatcher → <code>:telemetry</code> + JSONL session + Postgres <code>yard_events</code>.</div>
+    <div class="vstep"><span class="stepnum">9</span>Every event flowed: runner → dispatcher → <code>:telemetry</code> + JSONL session + Postgres <code>yard_events</code> (and <code>pig_events</code> for pig's agent-internal events when the bridge is enabled).</div>
   </div>
 
   <h3>Flow B — a crash mid-run, then retry (durability)</h3>
@@ -839,6 +845,8 @@ bin/postgres.sh             <span class="cm"># starts docker, applies all schema
     <tr><td>understand the main run loop</td><td><span class="chip y">yard/src/yard/runner.gleam</span> ★</td></tr>
     <tr><td>see how actors are loaded &amp; hashed</td><td><code>yard/src/yard/loader.gleam</code></td></tr>
     <tr><td>understand observability events</td><td><code>yard/src/yard/obs/{events,dispatcher,session}.gleam</code> · <code>knowledge/observability.md</code></td></tr>
+    <tr><td>understand the pig event bridge / agent-internal events</td><td><code>yard/src/yard/obs/pig_events.gleam</code> · <code>knowledge/observability.md</code></td></tr>
+    <tr><td>understand run_id generation</td><td><code>yard/src/yard/run_id.gleam</code></td></tr>
     <tr><td>understand durability / crash-resume</td><td><code>yard/src/yard/{durability,checkpoint,durable_handler}.gleam</code> · <code>knowledge/durable.md</code> · <code>docs/adr/0001-*.md</code></td></tr>
     <tr><td>understand the database / storage split</td><td><code>yard/src/yard/db.gleam</code> (PostgreSQL registry) · <code>pg_*.gleam</code> (conversation/events stores) · <code>knowledge/durable.md</code> § "Two-Database Strategy"</td></tr>
     <tr><td>understand cron scheduling</td><td><code>yard/src/yard/pg_cron.gleam</code> (PostgreSQL-native scheduler) · <code>knowledge/durable.md</code> § Scheduling</td></tr>

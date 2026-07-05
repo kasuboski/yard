@@ -135,7 +135,7 @@ fn events_table(events: List(EventRow)) -> String {
     [] -> "<p class=\"empty\">No events recorded.</p>"
     _ -> "
 <table>
-  <thead><tr><th>Type</th><th>Duration</th><th>Time</th><th>Payload</th></tr></thead>
+  <thead><tr><th>Type</th><th>Source</th><th>Duration</th><th>Time</th><th>Payload</th></tr></thead>
   <tbody>
 " <> string.join(
         list.map(events, fn(e) {
@@ -148,6 +148,11 @@ fn events_table(events: List(EventRow)) -> String {
           <> event_class(e.event_type)
           <> "\">"
           <> escape(e.event_type)
+          <> "</span></td>"
+          <> "<td><span class=\"badge badge-src-"
+          <> e.src
+          <> "\">"
+          <> escape(e.src)
           <> "</span></td>"
           <> "<td>"
           <> dur
@@ -222,11 +227,18 @@ fn status_class(status: String) -> String {
 
 fn event_class(event_type: String) -> String {
   case event_type {
+    // Host (yard_events) lifecycle
     "actor_started" -> "info"
     "actor_completed" -> "ok"
     "effect_yielded" -> "neutral"
     "effect_handled" -> "info"
     "effect_replayed" -> "warn"
+    // Pig (pig_events) agent-internal events
+    "pig.inference_completed" -> "ok"
+    "pig.tool_executed" -> "info"
+    "pig.session_ended" -> "ok"
+    "pig.inference_failed" -> "err"
+    "pig." <> _ -> "info"
     _ -> "neutral"
   }
 }
@@ -281,6 +293,8 @@ fn css() -> String {
   .badge-warn { background: rgba(245,158,11,0.15); color: var(--warn); }
   .badge-info { background: rgba(59,130,246,0.15); color: var(--info); }
   .badge-neutral { background: rgba(100,116,139,0.15); color: var(--muted); }
+  .badge-src-host { background: rgba(56,189,248,0.15); color: var(--link); }
+  .badge-src-pig { background: rgba(168,85,247,0.15); color: #a855f7; }
   .muted { color: var(--muted); }
   .empty { color: var(--muted); font-style: italic; padding: 12px 0; }
   pre.json { background: var(--surface); padding: 16px; border-radius: 8px; overflow-x: auto; white-space: pre-wrap; word-break: break-all; }

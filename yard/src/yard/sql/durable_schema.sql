@@ -48,3 +48,22 @@ CREATE TABLE IF NOT EXISTS yard_events (
 
 CREATE INDEX IF NOT EXISTS idx_yard_events_run_id
   ON yard_events(run_id);
+
+-- ─── Pig Events ──────────────────────────────────────────────────────
+-- Pig's rich agent-internal events (token usage, tool calls, inference
+-- timing). Stored SEPARATELY from yard_events — yard decodes
+-- yard_events.payload as HostEvent and pig_events.payload as
+-- SessionEvent. The two are joined at query time by run_id.
+-- Never write pig rows into yard_events.
+
+CREATE TABLE IF NOT EXISTS pig_events (
+  id          BIGSERIAL PRIMARY KEY,
+  run_id      UUID NOT NULL,
+  event_type  TEXT NOT NULL,        -- "pig.session.started", "pig.inference.completed", ...
+  payload     JSONB NOT NULL,
+  duration_ms INTEGER,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_pig_events_run_id
+  ON pig_events(run_id);

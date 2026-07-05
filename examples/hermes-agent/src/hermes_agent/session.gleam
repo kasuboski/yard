@@ -13,17 +13,16 @@
 
 import gabsurd/client.{type Db}
 import gleam/io
-import gleam/list
 import gleam/option
 import gleam/result
 import pig/ai/message.{type Message}
 import pig/ai/provider.{type Provider}
 import pig/tool
 import sqlight
-import yard/agent_checkpoint
 import yard/agent_turn
 import yard/conversation.{type ConversationStore}
 import yard/pg_conversation
+import yard/run_id
 
 // ═══════════════════════════════════════════════════════════════
 // Types
@@ -47,6 +46,7 @@ pub type SessionConfig {
 pub type HermesSession {
   HermesSession(
     config: SessionConfig,
+    db: Db,
     workspace_conn: sqlight.Connection,
     conv_store: ConversationStore,
     conversation_id: String,
@@ -97,6 +97,7 @@ pub fn create(
 
   Ok(HermesSession(
     config:,
+    db:,
     workspace_conn:,
     conv_store:,
     conversation_id:,
@@ -122,6 +123,10 @@ pub fn run_prompt(
   session: HermesSession,
   prompt: String,
 ) -> Result(String, Nil) {
+  // Each turn gets a fresh run_id (UUID v4, client-side) so host
+  // (yard_events) and pig (pig_events) events for this invocation can be
+  // correlated. Generated client-side so it is unique even if the DB is down.
+  let run_id = run_id.generate()
   case
     agent_turn.execute_turn(
       conv_store: session.conv_store,
@@ -132,6 +137,12 @@ pub fn run_prompt(
       system_prompt: session.config.system_prompt,
       agent_name: session.config.agent_name,
       run_timeout_ms: session.config.run_timeout_ms,
+      bridge: option.Some(agent_turn.BridgeConfig(
+        db: session.db,
+        run_id: run_id,
+        actor_path: session.config.agent_name,
+        actor_hash: "hermes",
+      )),
     )
   {
     Ok(agent_turn.TurnResult(final_message:, ..)) ->
@@ -169,6 +180,7 @@ pub fn reset(
 
   Ok(HermesSession(
     config:,
+    db:,
     workspace_conn: session.workspace_conn,
     conv_store:,
     conversation_id:,
@@ -203,6 +215,7 @@ pub fn load(
 
   Ok(HermesSession(
     config:,
+    db:,
     workspace_conn:,
     conv_store:,
     conversation_id:,

@@ -52,7 +52,7 @@ pub fn clean_durable(db: Db) -> Nil {
     client.exec(
       db,
       #(
-        "TRUNCATE TABLE yard_events, conversations RESTART IDENTITY CASCADE",
+        "TRUNCATE TABLE pig_events, yard_events, conversations RESTART IDENTITY CASCADE",
         [],
       ),
     )
